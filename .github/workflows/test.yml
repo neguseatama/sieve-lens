@@ -24,10 +24,14 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Run Sieve Lens Test Suite
+    - name: Run v0 Test Suite
       run: |
         python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
-    - name: Run Example Demo (sanity check)
+    - name: Run v0.1 Test Suite
       run: |
-        python examples/demo.py
+        python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
+
+    - name: Run v0.1 Example Demo
+      run: |
+        python examples/demo_v0_1.py

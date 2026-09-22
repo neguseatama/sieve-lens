@@ -1,5 +1,5 @@
 """
-Sieve Lens v0 - Invisible Prompt Observation Engine
+Sieve Lens v0.1.0 - Invisible Prompt Observation Engine
 
 Sieve Lens observes documents for invisible content that may be intended to
 influence AI-based evaluation systems. It reports evidence; it does not
@@ -10,10 +10,15 @@ Design principles (inherited from the Sieve series):
   - Zero deps     : Python standard library only.
   - Explainable   : every observation reports evidence with location.
   - Observation   : reports facts, not judgments.
+
+v0.1.0 adds:
+  - DOCX header / footer / footnote / endnote extraction
+  - Self-contained HTML report generation (format_report_html)
 """
 
 from __future__ import annotations
 
+import html
 import html.parser
 import re
 import unicodedata
@@ -24,16 +29,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
+__version__ = "0.1.0"
+
+
 # ----------------------------------------------------------------------
 # 1. Character tables (deterministic definitions)
 # ----------------------------------------------------------------------
 
 ZERO_WIDTH = frozenset({
-    0x200B,  # ZERO WIDTH SPACE
-    0x200C,  # ZERO WIDTH NON-JOINER
-    0x200D,  # ZERO WIDTH JOINER
-    0x2060,  # WORD JOINER
-    0xFEFF,  # ZERO WIDTH NO-BREAK SPACE
+    0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF,
 })
 
 BIDI_CONTROL = frozenset({
@@ -47,25 +51,31 @@ VARIATION_SELECTORS = frozenset(range(0xFE00, 0xFE10))
 INVISIBLE = ZERO_WIDTH | BIDI_CONTROL | TAG_CHARS | VARIATION_SELECTORS
 
 
+# Kinds considered "out-of-band" for H5. header_footer and footnote are
+# visible but easy to overlook; they are included here by design.
+OOB_KINDS = frozenset({
+    "comment", "metadata", "hidden_attr", "header_footer", "footnote",
+})
+
+
 # ----------------------------------------------------------------------
 # 2. Data classes
 # ----------------------------------------------------------------------
 
 @dataclass
 class Segment:
-    """A chunk of text extracted from a document."""
     text: str
     visible: bool
-    kind: str                    # "body" | "css_hidden" | "comment" | "metadata" | "hidden_attr"
+    kind: str                    # body | css_hidden | comment | metadata |
+                                 # hidden_attr | header_footer | footnote
     location: Optional[str] = None
 
 
 @dataclass
 class Observation:
-    """The result of observing a document."""
     source: str
-    mask: str                    # "H1H2H3H4-H5H6H7"
-    v0_mask: str                 # "H1H2H3H4"
+    mask: str
+    v0_mask: str
     h_states: Dict[str, int]
     segments: List[Segment] = field(default_factory=list)
     evidence: Dict[str, List[str]] = field(default_factory=dict)
@@ -125,10 +135,6 @@ def _script_of(ch: str) -> Optional[str]:
 
 
 def detect_script_mixing(text: str) -> List[str]:
-    """
-    Detect Latin+Cyrillic or Latin+Greek mixing within the same token.
-    This is the classic homoglyph attack pattern.
-    """
     offenders = []
     for token in text.split():
         scripts = set()
@@ -142,7 +148,6 @@ def detect_script_mixing(text: str) -> List[str]:
 
 
 def decode_invisible_payload(text: str) -> str:
-    """Best-effort decoding of zero-width payloads (U+200B=0, U+200C=1)."""
     zw = [c for c in text if ord(c) in ZERO_WIDTH]
     if not zw:
         return ""
@@ -287,27 +292,59 @@ class _DocxExtractor(_Extractor):
         segments: List[Segment] = []
         with zipfile.ZipFile(path) as zf:
             segments.extend(self._extract_body(zf))
+            segments.extend(self._extract_headers_footers(zf))
+            segments.extend(self._extract_footnotes(zf))
             segments.extend(self._extract_comments(zf))
             segments.extend(self._extract_core_props(zf))
         return segments
 
     def _extract_body(self, zf) -> List[Segment]:
-        try:
-            with zf.open("word/document.xml") as f:
-                tree = ET.parse(f)
-        except (KeyError, ET.ParseError):
-            return []
+        return self._extract_paragraphs(
+            zf, "word/document.xml", kind="body", visible=True,
+            location_prefix="paragraph",
+        )
+
+    def _extract_headers_footers(self, zf) -> List[Segment]:
         segments = []
-        para_idx = 0
-        for para in tree.getroot().iter(_w("p")):
-            texts = [(t.text or "") for t in para.iter(_w("t"))]
-            text = "".join(texts)
-            para_idx += 1
-            if text.strip():
-                segments.append(Segment(
-                    text=text, visible=True, kind="body",
-                    location=f"paragraph {para_idx}",
+        for name in sorted(zf.namelist()):
+            if name.startswith("word/header") and name.endswith(".xml"):
+                label = name.replace("word/", "").replace(".xml", "")
+                segments.extend(self._extract_paragraphs(
+                    zf, name, kind="header_footer", visible=True,
+                    location_prefix=label,
                 ))
+            elif name.startswith("word/footer") and name.endswith(".xml"):
+                label = name.replace("word/", "").replace(".xml", "")
+                segments.extend(self._extract_paragraphs(
+                    zf, name, kind="header_footer", visible=True,
+                    location_prefix=label,
+                ))
+        return segments
+
+    def _extract_footnotes(self, zf) -> List[Segment]:
+        segments = []
+        for part, label, tag in (
+            ("word/footnotes.xml", "footnote", "footnote"),
+            ("word/endnotes.xml", "endnote", "endnote"),
+        ):
+            try:
+                with zf.open(part) as f:
+                    tree = ET.parse(f)
+            except (KeyError, ET.ParseError):
+                continue
+            for idx, note in enumerate(tree.getroot().iter(_w(tag)), start=1):
+                # Skip separator / continuation separator notes.
+                if note.get(_w("type")):
+                    continue
+                texts = [(t.text or "") for t in note.iter(_w("t"))]
+                text = "".join(texts).strip()
+                if len(text) >= 10:
+                    segments.append(Segment(
+                        text=text,
+                        visible=False,
+                        kind="footnote",
+                        location=f"{label} #{idx}",
+                    ))
         return segments
 
     def _extract_comments(self, zf) -> List[Segment]:
@@ -346,13 +383,32 @@ class _DocxExtractor(_Extractor):
                     ))
         return segments
 
+    def _extract_paragraphs(
+        self, zf, part: str, kind: str, visible: bool, location_prefix: str
+    ) -> List[Segment]:
+        try:
+            with zf.open(part) as f:
+                tree = ET.parse(f)
+        except (KeyError, ET.ParseError):
+            return []
+        segments = []
+        for idx, para in enumerate(tree.getroot().iter(_w("p")), start=1):
+            texts = [(t.text or "") for t in para.iter(_w("t"))]
+            text = "".join(texts)
+            if text.strip():
+                segments.append(Segment(
+                    text=text, visible=visible, kind=kind,
+                    location=f"{location_prefix} {idx}",
+                ))
+        return segments
+
 
 # ----------------------------------------------------------------------
 # 5. Engine
 # ----------------------------------------------------------------------
 
 class SieveLensEngine:
-    """Sieve Lens v0 observation engine."""
+    """Sieve Lens v0.1.0 observation engine."""
 
     def __init__(
         self,
@@ -388,9 +444,9 @@ class SieveLensEngine:
         return self._analyze(segments, source="<text>")
 
     def _analyze(self, segments: List[Segment], source: str) -> Observation:
-        body_text = "".join(s.text for s in segments if s.kind in ("body", "css_hidden"))
-        oob_segments = [s for s in segments
-                        if s.kind in ("comment", "metadata", "hidden_attr")]
+        body_text = "".join(s.text for s in segments
+                            if s.kind in ("body", "css_hidden"))
+        oob_segments = [s for s in segments if s.kind in OOB_KINDS]
 
         h1 = 1
         zw_density = zero_width_density(body_text)
@@ -424,6 +480,8 @@ class SieveLensEngine:
                 "zero_width_density": round(zw_density, 4),
                 "zero_width_threshold": self.zero_width_density_threshold,
                 "payload_min_length": self.payload_min_length,
+                "oob_min_length": self.oob_min_length,
+                "version": __version__,
             },
         )
 
@@ -478,12 +536,12 @@ class SieveLensEngine:
                       "H5": 0, "H6": 0, "H7": 0},
             segments=[],
             evidence={"H1": [reason]},
-            diagnostics={},
+            diagnostics={"version": __version__},
         )
 
 
 # ----------------------------------------------------------------------
-# 6. Report formatter
+# 6. Text report
 # ----------------------------------------------------------------------
 
 _LABELS = {
@@ -501,8 +559,9 @@ def format_report(obs: Observation) -> str:
     lines = []
     lines.append("=" * 66)
     lines.append("  SIEVE-LENS OBSERVATION REPORT")
-    lines.append(f"  Source : {obs.source}")
-    lines.append(f"  Mask   : {obs.mask}   (H1H2H3H4-H5H6H7)")
+    lines.append(f"  Version : {obs.diagnostics.get('version', 'unknown')}")
+    lines.append(f"  Source  : {obs.source}")
+    lines.append(f"  Mask    : {obs.mask}   (H1H2H3H4-H5H6H7)")
     lines.append("=" * 66)
     lines.append("")
     for key in ("H1", "H2", "H3", "H4", "H5", "H6", "H7"):
@@ -526,14 +585,289 @@ def format_report(obs: Observation) -> str:
     return "\n".join(lines)
 
 
+# ----------------------------------------------------------------------
+# 7. HTML report
+# ----------------------------------------------------------------------
+
+_INVISIBLE_CLASS = {
+    "zero_width": "zw",
+    "bidi": "bidi",
+    "tag": "tag",
+    "vs": "vs",
+    "control": "ctrl",
+}
+
+
+def _classify_invisible(cp: int) -> Optional[str]:
+    if cp in ZERO_WIDTH:
+        return "zero_width"
+    if cp in BIDI_CONTROL:
+        return "bidi"
+    if cp in TAG_CHARS:
+        return "tag"
+    if cp in VARIATION_SELECTORS:
+        return "vs"
+    if cp < 0x20 and cp not in (0x09, 0x0A, 0x0D):
+        return "control"
+    return None
+
+
+def render_markers_html(text: str) -> str:
+    """Render text for HTML, replacing invisible characters with markers."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        kind = _classify_invisible(cp)
+        if kind:
+            cls = _INVISIBLE_CLASS[kind]
+            out.append(f'<span class="inv {cls}">U+{cp:04X}</span>')
+        elif ch == "\n":
+            out.append("<br>")
+        elif ch == "\t":
+            out.append("&nbsp;&nbsp;&nbsp;&nbsp;")
+        else:
+            out.append(html.escape(ch))
+    return "".join(out)
+
+
+def render_markers_text(text: str) -> str:
+    """Render text for terminal, replacing invisible characters with markers."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        kind = _classify_invisible(cp)
+        if kind:
+            out.append(f"[U+{cp:04X}]")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve Lens Observation Report</title>
+<style>
+:root {{
+  --fg: #1a1a1a;
+  --bg: #fafafa;
+  --card: #ffffff;
+  --border: #dddddd;
+  --muted: #6a737d;
+  --warn: #d73a49;
+  --warn-bg: #fff5f5;
+  --ok: #22863a;
+  --accent: #0366d6;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  max-width: 920px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.5;
+}}
+h1 {{ font-size: 1.5rem; margin: 0 0 1rem; }}
+h2 {{ font-size: 1.1rem; margin: 2rem 0 .5rem; }}
+.meta {{
+  font-size: .875rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}}
+.mask {{
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.75rem;
+  letter-spacing: .15em;
+  padding: .5rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: inline-block;
+  margin: .5rem 0 1rem;
+}}
+.mask .detected {{ color: var(--warn); font-weight: 700; }}
+.mask .not-detected {{ color: var(--muted); }}
+table {{
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}}
+th, td {{
+  text-align: left;
+  padding: .55rem .8rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .9rem;
+}}
+th {{ background: #f0f0f0; font-weight: 600; }}
+tr:last-child td {{ border-bottom: none; }}
+tr.detected-row {{ background: var(--warn-bg); }}
+tr.detected-row td:first-child {{ border-left: 3px solid var(--warn); }}
+.status-yes {{ color: var(--warn); font-weight: 600; }}
+.status-no {{ color: var(--muted); }}
+.section {{
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}}
+.section h3 {{
+  font-size: 1rem;
+  margin: 0 0 .5rem;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}}
+.evidence-item {{
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: .85rem;
+  padding: .35rem .5rem;
+  margin: .25rem 0;
+  background: #f6f8fa;
+  border-radius: 4px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}}
+.inv {{
+  display: inline-block;
+  padding: 0 .25em;
+  margin: 0 .1em;
+  border-radius: 3px;
+  font-size: .75em;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}}
+.inv.zw   {{ background: #ffe5e5; color: #b00020; }}
+.inv.bidi {{ background: #e5ecff; color: #0050b3; }}
+.inv.tag  {{ background: #e5ffe5; color: #006000; }}
+.inv.vs   {{ background: #fff5e5; color: #a05000; }}
+.inv.ctrl {{ background: #eee; color: #666; }}
+footer {{
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .85rem;
+}}
+footer p {{ margin: .5rem 0; }}
+</style>
+</head>
+<body>
+
+<h1>Sieve Lens Observation Report</h1>
+
+<div class="meta">
+  <div>Version: <strong>{version}</strong></div>
+  <div>Source: <code>{source}</code></div>
+</div>
+
+<div class="mask" data-mask="{mask_plain}">{mask_html}<span class="mask-plain" hidden>{mask_plain}</span></div>
+
+<h2>Observation Space</h2>
+<table>
+<thead>
+<tr><th>Bit</th><th>Hypothesis</th><th>Status</th></tr>
+</thead>
+<tbody>
+{hypothesis_rows}
+</tbody>
+</table>
+
+<h2>Evidence</h2>
+{evidence_sections}
+
+<footer>
+<p><strong>This is an observation report, not a judgment of intent.</strong></p>
+<p>Human review is required to determine whether the detected invisible
+content is legitimate or abusive.</p>
+<p>Generated deterministically by Sieve Lens v{version}. No timestamps,
+randomness, or external resources are included.</p>
+</footer>
+
+</body>
+</html>
+"""
+
+
+def _render_mask_html(mask: str) -> str:
+    parts = []
+    for ch in mask:
+        if ch == "-":
+            parts.append("&ndash;")
+        elif ch == "1":
+            parts.append('<span class="detected">1</span>')
+        elif ch == "0":
+            parts.append('<span class="not-detected">0</span>')
+        else:
+            parts.append(html.escape(ch))
+    return "".join(parts)
+
+
+def format_report_html(obs: Observation) -> str:
+    rows = []
+    for key in ("H1", "H2", "H3", "H4", "H5", "H6", "H7"):
+        detected = obs.h_states[key] == 1
+        cls = ' class="detected-row"' if detected else ""
+        status = ('<span class="status-yes">DETECTED</span>'
+                  if detected else
+                  '<span class="status-no">not detected</span>')
+        rows.append(
+            f'<tr{cls}><td><code>{key}</code></td>'
+            f'<td>{html.escape(_LABELS[key])}</td>'
+            f'<td>{status}</td></tr>'
+        )
+    hypothesis_rows = "\n".join(rows)
+
+    sections = []
+    for key in ("H1", "H2", "H3", "H4", "H5", "H6", "H7"):
+        items = obs.evidence.get(key, [])
+        if items:
+            body = "\n".join(
+                f'<div class="evidence-item">{render_markers_html(item)}</div>'
+                for item in items
+            )
+        else:
+            body = '<div class="evidence-item">(no evidence)</div>'
+        sections.append(
+            f'<div class="section"><h3>[{key}] {html.escape(_LABELS[key])}</h3>{body}</div>'
+        )
+    evidence_sections = "\n".join(sections)
+
+    return _HTML_TEMPLATE.format(
+        version=html.escape(str(obs.diagnostics.get("version", "unknown"))),
+        source=html.escape(obs.source),
+        mask_plain=html.escape(obs.mask),
+        mask_html=_render_mask_html(obs.mask),
+        hypothesis_rows=hypothesis_rows,
+        evidence_sections=evidence_sections,
+    )
+
+
+def write_report_html(obs: Observation, path) -> None:
+    Path(path).write_text(format_report_html(obs), encoding="utf-8")
+
+
+# ----------------------------------------------------------------------
+# 8. Public API
+# ----------------------------------------------------------------------
+
 __all__ = [
     "SieveLensEngine",
     "Observation",
     "Segment",
     "format_report",
+    "format_report_html",
+    "write_report_html",
+    "render_markers_html",
+    "render_markers_text",
     "zero_width_density",
     "has_bidi_control",
     "detect_script_mixing",
     "find_invisible_runs",
     "decode_invisible_payload",
+    "__version__",
 ]
