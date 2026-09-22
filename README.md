@@ -95,6 +95,99 @@ print(obs.h_states)                # {'H1': 1, 'H2': 0, ..., 'H7': 0}
 print(format_report(obs))          # human-readable text report
 
 html = format_report_html(obs)     # self-contained HTML report
+```
+
+To write the HTML report to a file:
+
+```python
+from sieve_lens import write_report_html
+write_report_html(obs, "report.html")
+```
+
+---
+
+## 🔬 Testing
+
+```bash
+# v0 test suite (26 tests)
+python -m unittest discover -s tests -p "test_sieve_lens.py" -v
+
+# v0.1 test suite (14 tests)
+python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
+```
+
+---
+
+## ⚠️ Known Limitations (v0.1)
+
+1. **PDF and images are not supported.** This is a deliberate scope decision.
+2. **Semantic intent is not evaluated.** A visible but manipulative prompt is
+   outside the scope of this tool.
+3. **Only inline CSS is inspected.** External stylesheets and CSS classes are
+   not resolved.
+4. **Character-table coverage is fixed.** New invisible techniques require
+   updating the tables.
+5. **This is an observation engine, not a detector.** Findings should always
+   be confirmed by human review.
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## 👤 Author
+
+* **Kai IWASAKI**| H7 | Contiguous Payload | A run of ≥ N contiguous invisible chars exists |
+
+Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
+
+---
+
+## 📦 Supported Formats
+
+| Format | Coverage |
+|--------|----------|
+| `.txt`, `.md` | Plain text, full character-level scanning |
+| `.html`, `.htm` | HTML with inline-style concealment detection |
+| `.docx` | Body, comments, core properties, **headers, footers, footnotes, endnotes** (v0.1) |
+
+**Not supported in v0.1**: PDF, images, audio, video.
+
+---
+
+## 🔥 Key Features
+
+- **7-bit observation space (H1–H7)**  
+  Independent, deterministic detection of each class of invisible content.
+- **Zero dependencies**  
+  Python standard library only. Runs offline, no telemetry, no network.
+- **Deterministic**  
+  Same input always yields the same observation, on any platform.
+- **Explainable**  
+  Every observation carries location and decoded content, so a human can verify.
+- **Observation, not judgment**  
+  The engine reports evidence. It never declares "this is an attack".
+- **Self-contained HTML report** (v0.1)  
+  Deterministic, no external resources, greppable `data-mask` attribute.
+
+---
+
+## 💻 Quick Start
+
+```python
+from sieve_lens import SieveLensEngine, format_report, format_report_html
+
+engine = SieveLensEngine()
+obs = engine.observe("resume.docx")
+
+print(obs.mask)                    # e.g. "1000-100"
+print(obs.h_states)                # {'H1': 1, 'H2': 0, ..., 'H7': 0}
+print(format_report(obs))          # human-readable text report
+
+html = format_report_html(obs)     # self-contained HTML report
 
 Or write the HTML report to a file:
 
