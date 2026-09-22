@@ -93,41 +93,45 @@ print(obs.h_states)                # {'H1': 1, 'H2': 0, ..., 'H7': 0}
 print(format_report(obs))          # 人間可読なテキストレポート
 
 html = format_report_html(obs)     # 自己完結型 HTML レポート
+```
 
 HTML レポートをファイルに保存する場合：
 
+```python
 from sieve_lens import write_report_html
 write_report_html(obs, "report.html")
+```
 
 ---
 
 ## 🔬 テスト
 
+```bash
 # v0 テストスイート（26件）
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
 # v0.1 テストスイート（14件）
 python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
+```
 
 ---
 
 ## ⚠️ 既知の限界（v0.1）
-PDF・画像は非対応（意図的なスコープ判断）
 
-意味的意図は評価しない（可視だが細工された文は対象外）
-
-インライン CSS のみ検査（外部スタイルシート未解決）
-
-符号表は固定（新しい不可視手法には表の拡張が必要）
-
-これは観測エンジンであり、検出器ではない（人間による確認が前提）
+1. **PDF・画像は非対応**（意図的なスコープ判断）
+2. **意味的意図は評価しない**（可視だが細工された文は対象外）
+3. **インライン CSS のみ検査**（外部スタイルシート未解決）
+4. **符号表は固定**（新しい不可視手法には表の拡張が必要）
+5. **これは観測エンジンであり、検出器ではない**（人間による確認が前提）
 
 ---
 
 ## 📄 ライセンス
-MIT License。詳細は LICENSE を参照してください。
+
+MIT License。詳細は [LICENSE](LICENSE) を参照してください。
 
 ---
 
 ## 👤 Author
-Kai IWASAKI
+
+* **Kai IWASAKI**
