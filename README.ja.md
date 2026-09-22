@@ -1,10 +1,10 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0
+# Sieve Lens v0.1.0
 
 **不可視プロンプト観測エンジン**
 
-> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」について、
+> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」を、
 > 決定論的・ゼロ依存・説明可能な形で観測するエンジンです。
 
 [Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
@@ -24,7 +24,7 @@
 
 - **ゼロ幅文字** (`U+200B` など)：モデルは読めるが、人間には見えない。
 - **CSS 隠蔽** (`display:none`)：人間には見えないが、パーサは読める。
-- **帯域外チャネル**（コメント・メタデータ）：パーサは読めるが、人間は見ない。
+- **帯域外チャネル**（コメント・メタデータ・ヘッダー・脚注）：パーサは読めるが、人間は見落とす。
 
 **Sieve Lens は、この乖離を観測します。**  
 悪意の有無は判定しません。位置情報とデコード結果を提示し、
@@ -43,11 +43,11 @@
 | H2 | Zero-Width Density | ゼロ幅文字の密度が閾値超過 |
 | H3 | Bidi Controls | 双方向制御文字の存在 |
 | H4 | Format Concealment | CSS による隠蔽（display:none 等） |
-| H5 | Out-of-Band Channel | コメント・メタデータ等に実質的内容 |
+| H5 | Out-of-Band Channel | コメント・メタデータ・ヘッダー・フッター・脚注に実質的内容 |
 | H6 | Script Mixing | 同一トークン内の異文字体系混在 |
 | H7 | Contiguous Payload | 閾値長以上の連続した不可視文字 |
 
-マスク表記：`H1H2H3H4-H5H6H7`（例：`1101-101`）
+マスク表記：`H1H2H3H4-H5H6H7`（例：`1000-100`）
 
 ---
 
@@ -57,9 +57,9 @@
 |------|---------|
 | `.txt` / `.md` | プレーンテキスト、全文字スキャン |
 | `.html` / `.htm` | インライン CSS 隠蔽検出 |
-| `.docx` | 本文・コメント・core プロパティ |
+| `.docx` | 本文・コメント・core プロパティ・**ヘッダー・フッター・脚注・末尾脚注**（v0.1） |
 
-**v0 非対応**：PDF、画像、音声、動画
+**v0.1 非対応**：PDF、画像、音声、動画
 
 ---
 
@@ -75,30 +75,43 @@
   すべての観測に位置情報とデコード結果を付与。
 - **観測であって判定ではない**  
   エンジンは証拠を提示するのみ。「攻撃である」とは宣言しない。
+- **自己完結型 HTML レポート**（v0.1）  
+  決定論的、外部リソースなし、`data-mask` 属性で grep 可能。
 
 ---
 
 ## 💻 クイックスタート
 
 ```python
-from sieve_lens import SieveLensEngine, format_report
+from sieve_lens import SieveLensEngine, format_report, format_report_html
 
 engine = SieveLensEngine()
 obs = engine.observe("resume.docx")
 
-print(obs.mask)            # 例: "1001-100"
-print(obs.h_states)        # {'H1': 1, 'H2': 0, ..., 'H7': 0}
-print(format_report(obs))  # 人間可読な観測レポート
+print(obs.mask)                    # 例: "1000-100"
+print(obs.h_states)                # {'H1': 1, 'H2': 0, ..., 'H7': 0}
+print(format_report(obs))          # 人間可読なテキストレポート
+
+html = format_report_html(obs)     # 自己完結型 HTML レポート
+
+HTML レポートをファイルに保存する場合：
+
+from sieve_lens import write_report_html
+write_report_html(obs, "report.html")
 
 ---
 
 ## 🔬 テスト
-bash
+
+# v0 テストスイート（26件）
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
+
+# v0.1 テストスイート（14件）
+python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
 ---
 
-## ⚠️ 既知の限界（v0）
+## ⚠️ 既知の限界（v0.1）
 PDF・画像は非対応（意図的なスコープ判断）
 
 意味的意図は評価しない（可視だが細工された文は対象外）
