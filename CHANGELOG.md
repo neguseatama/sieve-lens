@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.0.1] - 2026-09-XX
+## [0.0.1] - 2026-09-23
 
 ### Added
 - Initial release of Sieve Lens v0
