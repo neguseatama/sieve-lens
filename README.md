@@ -4,6 +4,9 @@
 
 **Invisible Prompt Observation Engine**
 
+*Sieve Lens is not a tool that distrusts AI.*  
+*It is a tool that helps AI receive trustworthy input.*
+
 > Zero-dependency, deterministic, explainable observation of invisible content
 > in documents (resumes, submissions, reports) that may be intended to
 > influence AI-based evaluation systems.
