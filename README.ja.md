@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.3.0
+# Sieve Lens v0.4.0
 
 **不可視プロンプト観測エンジン**
 
@@ -56,7 +56,7 @@
 | 形式 | 対応範囲 | 依存 |
 |------|---------|------|
 | `.txt` / `.md` | プレーンテキスト、全文字スキャン | なし（Core） |
-| `.html` / `.htm` | インライン CSS 隠蔽検出 | なし（Core） |
+| `.html` / `.htm` | インライン style 属性および `<style>` ブロックの隠蔽検出、オプションで外部 CSS 解決 | なし（Core）；`tinycss2`（オプション） |
 | `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
 | `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3） | `pypdf`（オプション） |
 | `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ（オプション） |

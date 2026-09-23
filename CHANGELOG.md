@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.0] - 2026-09-23
+
+### Added
+- **HTML external CSS resolution via `tinycss2`** (optional extension)
+  `sieve_lens_ext.html_css.install(engine)` replaces the built-in HTML
+  extractor with a CSS-aware one.
+- Resolves `<style>` blocks within the HTML document.
+- Resolves `<link rel="stylesheet" href="...">` when the href points to
+  a **local file**. Remote URLs (`http://`, `https://`, `data:`,
+  `javascript:`) are ignored for security.
+- Detects CSS hiding patterns:
+  - `display: none`, `visibility: hidden`, `opacity: 0`
+  - `font-size: 0`, `text-indent: -NNNN+`
+  - off-screen positioning (`left/top/right/bottom: -NNNN+`)
+  - `clip: rect(0,0,0,0)`, `clip-path: inset(100%)`
+- New optional-dependency group: `pip install sieve-lens[html-css]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- CSS hiding is surfaced as H4 (Format Concealment).
+- Selector matching is simplified: ID, class, and tag selectors are
+  matched against element attributes. Complex selectors are reported
+  with their raw text but not fully resolved.
+- Remote stylesheets are never fetched, preserving determinism and
+  avoiding SSRF risks.
+- The 7-bit observation space is unchanged.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added
