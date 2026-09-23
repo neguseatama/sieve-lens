@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.5.0
+# Sieve Lens v0.6.0
 
 **不可視プロンプト観測エンジン**
 
