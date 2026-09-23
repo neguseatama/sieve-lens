@@ -93,6 +93,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Generate an A4 PDF report from a directory of documents. Includes
   summary, hypothesis table, mask distribution, and a color-coded file
   list. Requires `weasyprint` (and optionally `kaleido` for charts).
+- **Image layer analysis** (since v0.7)  
+  Detects pixel-level concealment in images: transparent RGBA layers
+  carrying non-zero RGB values, and low-contrast text with a WCAG ratio
+  below 2:1. Requires `Pillow`.
 
 ---
 

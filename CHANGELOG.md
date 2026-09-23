@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0] - 2026-09-23
+
+### Added
+- **Image layer analysis** (optional extension, same dependency as OCR)
+  `sieve_lens_ext.image_layers.install(engine)` detects pixel-level
+  concealment in image files.
+- **Transparent layer detection (H4):** RGBA images with alpha=0 pixels
+  that carry non-zero RGB values (invisible payload).
+- **Low-contrast detection (H4):** foreground/background luminance gap
+  below WCAG 2:1 ratio, with at least 1% of pixels in the dark cluster.
+- Both detections surface as `kind="css_hidden"`, reusing the existing
+  H4 observation channel.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- The extension reuses the same `.png`, `.jpg`, etc. extensions as the
+  OCR extension; install both to combine pixel-level and metadata
+  analysis.
+- Detection thresholds are fixed constants, preserving determinism.
+- The 7-bit observation space is unchanged.
+
 ## [0.6.0] - 2026-09-23
 
 ### Added
