@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.0] - 2026-09-23
+
+### Added
+- **Printable PDF report generation via `weasyprint`** (optional extension)
+  `sieve_lens_ext.pdf_report.build_pdf_report()` scans a directory, runs
+  observations, and writes an A4 PDF report.
+- Report contents:
+  - Executive summary (total / clean / flagged / unparsed)
+  - Hypothesis activation table
+  - Mask distribution table
+  - Detailed file list with H1–H7 badges and evidence summaries
+  - Optional PNG charts (requires `kaleido`)
+- Deterministic output: fixed PDF metadata, sorted files, no timestamps.
+- New optional-dependency group: `pip install sieve-lens[pdf-report]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- weasyprint requires system libraries (Pango, Cairo) at install time.
+- Charts are rendered to PNG via `kaleido` and embedded as images.
+- The 7-bit observation space is unchanged.
+
 ## [0.5.0] - 2026-09-23
 
 ### Added
