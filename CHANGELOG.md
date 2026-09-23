@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0] - 2026-09-23
+
+### Added
+- **Image OCR support via `Pillow` + `pytesseract`** (optional extension)
+  `sieve_lens_ext.ocr.install(engine)` attaches image handling for
+  `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp`.
+- Extracts image metadata:
+  - EXIF text tags (ImageDescription, UserComment, XP* tags, etc.)
+  - PNG `tEXt` / `iTXt` / `zTXt` chunks
+  - XMP packets
+- Extracts OCR text via Tesseract.
+- New optional-dependency group: `pip install sieve-lens[ocr]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- Image metadata is surfaced as H5 (Out-of-Band Channel).
+- OCR text is surfaced as body text; zero-width and bidi control
+  characters cannot be recovered by OCR and are therefore documented
+  as metadata-only vectors for images.
+- The 7-bit observation space is unchanged.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

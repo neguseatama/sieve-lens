@@ -59,8 +59,9 @@
 | `.html` / `.htm` | インライン CSS 隠蔽検出 | なし（Core） |
 | `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
 | `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3） | `pypdf`（オプション） |
+| `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ（オプション） |
 
-**非対応**：画像、音声、動画
+**非対応**：音声、動画
 
 ---
 
