@@ -61,8 +61,9 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 | `.html`, `.htm` | HTML with inline-style concealment detection | none (core) |
 | `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
 | `.pdf` | Body text, metadata, annotations, invisible text (Tr 3) | `pypdf` (optional) |
+| `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary (optional) |
 
-**Not supported**: images, audio, video.
+**Not supported**: audio, video.
 
 ---
 
