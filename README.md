@@ -104,6 +104,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 - **Report internationalization (i18n)** (since v0.9)  
   Dashboard and PDF reports are available in English and Japanese.
   Auto-detection selects the language based on input document content.
+- **PDF embedded image analysis** (since v0.10)  
+  Extracts images embedded in PDF pages and applies OCR, transparent
+  layer detection, low-contrast detection, and metadata analysis to
+  each image. Requires `pypdf` + `Pillow`.
 
 ---
 
