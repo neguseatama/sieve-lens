@@ -85,6 +85,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 - **Self-contained HTML report** (since v0.1)  
 - **PDF support** via `pypdf` (since v0.2)  
 - **Image OCR support** via `Pillow` + `pytesseract` (since v0.3)
+- **Interactive HTML dashboard** (since v0.5)  
+  Batch-analyze a directory and produce a single self-contained dashboard
+  with summary cards, mask distribution, hypothesis activation charts,
+  and a sortable file table. Requires `Jinja2` + `Plotly`.
 
 ---
 
