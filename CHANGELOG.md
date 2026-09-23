@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0] - 2026-09-24
+
+### Added
+- **Full CSS selector resolution via `cssselect2`** (optional extension)
+  `sieve_lens_ext.html_css_selectors.install(engine)` replaces the
+  simplified ID/class/tag matcher from v0.4 with full selector matching.
+- Supported selectors:
+  - Descendant (`div p`), child (`div > p`)
+  - Adjacent sibling (`h1 + p`), general sibling (`h1 ~ p`)
+  - Attribute selectors (`[data-x]`, `[href^='http']`)
+  - Pseudo-classes (`:first-child`, `:nth-child()`, `:not()`)
+- **Hidden rules are only reported when the selector matches at least
+  one element**, reducing false positives.
+- New optional-dependency group: `pip install sieve-lens[html-css-full]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- v0.8 is a strict superset of v0.4; both extractors can coexist, and
+  the one installed last takes effect for `.html`/`.htm`.
+- The 7-bit observation space is unchanged.
+
 ## [0.7.0] - 2026-09-23
 
 ### Added

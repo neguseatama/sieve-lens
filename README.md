@@ -97,6 +97,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Detects pixel-level concealment in images: transparent RGBA layers
   carrying non-zero RGB values, and low-contrast text with a WCAG ratio
   below 2:1. Requires `Pillow`.
+- **Full CSS selector resolution** (since v0.8)  
+  Extends the HTML extractor with full CSS selector matching via
+  `cssselect2`: descendant, child, sibling, attribute, and pseudo-class
+  selectors. Hidden rules are only reported when they match an element.
 
 ---
 
