@@ -60,6 +60,7 @@ except ImportError:
     KALEIDO_AVAILABLE = False
 
 from sieve_lens import Observation
+from sieve_lens_ext.i18n import get_translations, resolve_language, hypothesis_label as _hyp_label
 from sieve_lens_ext.dashboard import (
     _HYPOTHESES,
     _HYPOTHESIS_LABELS,
@@ -149,7 +150,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Sieve Lens Observation Report</title>
+<title>{{ t.report_title }}</title>
 <style>
 @page {
   size: A4 portrait;
@@ -259,46 +260,45 @@ footer-note {
 </head>
 <body>
 
-<h1>Sieve Lens Observation Report</h1>
+<h1>{{ t.report_title }}</h1>
 
 <div class="header-meta">
-  Source: <code>{{ input_dir }}</code><br>
-  Files scanned: {{ summary.total_files }} &mdash;
-  Parsed: {{ summary.parsed_files }} &mdash;
-  Clean: {{ summary.clean_files }} &mdash;
-  Flagged: {{ summary.flagged_files }} &mdash;
-  Unparsed: {{ summary.unparsed_files }}
+  {{ t.report_source }}: <code>{{ input_dir }}</code><br>
+  {{ t.report_files_scanned }}: {{ summary.total_files }} &mdash;
+  {{ t.report_parsed }}: {{ summary.parsed_files }} &mdash;
+  {{ t.report_clean }}: {{ summary.clean_files }} &mdash;
+  {{ t.report_flagged }}: {{ summary.flagged_files }} &mdash;
+  {{ t.report_unparsed }}: {{ summary.unparsed_files }}
 </div>
 
 <p class="statement">
-  This is an observation report, not a judgment of intent.
-  Human review is required to determine whether the detected invisible
-  content is legitimate or abusive.
+  {{ t.footer_statement_report }}
+  {{ t.footer_human_review }}
 </p>
 
-<h2>Summary</h2>
+<h2>{{ t.section_summary }}</h2>
 
 <div class="summary-grid">
   <div class="summary-card">
-    <div class="summary-label">Total Files</div>
+    <div class="summary-label">{{ t.summary_total }}</div>
     <div class="summary-value">{{ summary.total_files }}</div>
   </div>
   <div class="summary-card ok">
-    <div class="summary-label">Clean</div>
+    <div class="summary-label">{{ t.summary_clean }}</div>
     <div class="summary-value">{{ summary.clean_files }}</div>
   </div>
   <div class="summary-card warn">
-    <div class="summary-label">Flagged</div>
+    <div class="summary-label">{{ t.summary_flagged }}</div>
     <div class="summary-value">{{ summary.flagged_files }}</div>
   </div>
   <div class="summary-card">
-    <div class="summary-label">Unparsed</div>
+    <div class="summary-label">{{ t.summary_unparsed }}</div>
     <div class="summary-value">{{ summary.unparsed_files }}</div>
   </div>
 </div>
 
 {% if chart_mask_path or chart_hypothesis_path %}
-<h2>Charts</h2>
+<h2>{{ t.section_charts }}</h2>
 {% if chart_mask_path %}
 <img class="chart-img" src="{{ chart_mask_path }}" alt="Mask Distribution">
 {% endif %}
@@ -307,10 +307,10 @@ footer-note {
 {% endif %}
 {% endif %}
 
-<h2>Hypothesis Activation</h2>
+<h2>{{ t.section_hypothesis }}</h2>
 <table>
 <thead>
-<tr><th>Bit</th><th>Name</th><th>Files with H = 1</th></tr>
+<tr><th>{{ t.table_bit }}</th><th>{{ t.table_name }}</th><th>{{ t.table_h_count }}</th></tr>
 </thead>
 <tbody>
 {% for h in hypothesis_keys %}
@@ -323,10 +323,10 @@ footer-note {
 </tbody>
 </table>
 
-<h2>Mask Distribution</h2>
+<h2>{{ t.section_mask }}</h2>
 <table>
 <thead>
-<tr><th>Mask (H1H2H3H4-H5H6H7)</th><th>Files</th></tr>
+<tr><th>{{ t.table_mask_long }}</th><th>{{ t.summary_total }}</th></tr>
 </thead>
 <tbody>
 {% for mask, count in summary.mask_counts.items() %}
@@ -338,14 +338,14 @@ footer-note {
 </tbody>
 </table>
 
-<h2>Files</h2>
+<h2>{{ t.section_files }}</h2>
 <table class="file-list">
 <thead>
 <tr>
-  <th>File</th>
-  <th>Mask</th>
+  <th>{{ t.table_file }}</th>
+  <th>{{ t.table_mask }}</th>
   <th>H1 &ndash; H7</th>
-  <th>Evidence (first)</th>
+  <th>{{ t.table_evidence_first }}</th>
 </tr>
 </thead>
 <tbody>
@@ -433,18 +433,21 @@ def render_pdf_report_html(
     base_dir: Optional[Path] = None,
     chart_mask_path: Optional[Path] = None,
     chart_hypothesis_path: Optional[Path] = None,
-    version: str = "0.6.0",
+    version: str = "0.9.0",
+    lang: str = "en",
 ) -> str:
     from jinja2 import Template
 
     rows = [_row_data(obs, base_dir) for obs in observations]
+    t = get_translations(lang)
     template = Template(_TEMPLATE)
     return template.render(
+        t=t,
         input_dir=html.escape(input_dir),
         summary=summary,
         observations=rows,
         hypothesis_keys=_HYPOTHESES,
-        hypothesis_labels=_HYPOTHESIS_LABELS,
+        hypothesis_labels={h: _hyp_label(lang, h) for h in _HYPOTHESES},
         chart_mask_path=str(chart_mask_path) if chart_mask_path else "",
         chart_hypothesis_path=str(chart_hypothesis_path) if chart_hypothesis_path else "",
         version=version,
@@ -462,6 +465,7 @@ def build_pdf_report(
     extensions: Optional[Sequence[str]] = None,
     include_charts: bool = True,
     max_workers: Optional[int] = None,
+    lang: str = "auto",
 ) -> Path:
     """Generate a PDF report from a directory of documents.
 
@@ -504,6 +508,15 @@ def build_pdf_report(
             if _render_hypothesis_chart_png(summary, p2):
                 chart_hypothesis_path = p2
 
+        resolved_lang = lang
+        if lang == "auto":
+            sample_texts = []
+            for obs in observations[:5]:
+                sample_texts.append(obs.source)
+                for seg in obs.segments[:5]:
+                    sample_texts.append(seg.text)
+            resolved_lang = resolve_language(lang, sample_texts)
+
         html_text = render_pdf_report_html(
             summary=summary,
             observations=observations,
@@ -511,6 +524,7 @@ def build_pdf_report(
             base_dir=input_dir,
             chart_mask_path=chart_mask_path,
             chart_hypothesis_path=chart_hypothesis_path,
+            lang=resolved_lang,
         )
 
         output_path.parent.mkdir(parents=True, exist_ok=True)

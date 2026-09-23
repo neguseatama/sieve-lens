@@ -52,6 +52,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 from sieve_lens import SieveLensEngine, Observation
+from sieve_lens_ext.i18n import get_translations, resolve_language, hypothesis_label as _hyp_label
 
 
 _DEFAULT_EXTENSIONS = (
@@ -235,7 +236,7 @@ def _mask_color(mask: str) -> str:
     return "#d73a49"           # flagged
 
 
-def _build_mask_chart(mask_counts: Dict[str, int], include_js: bool | str):
+def _build_mask_chart(mask_counts: Dict[str, int], include_js: bool | str, t: dict):
     masks = list(mask_counts.keys())
     counts = [mask_counts[m] for m in masks]
     colors = [_mask_color(m) for m in masks]
@@ -248,9 +249,9 @@ def _build_mask_chart(mask_counts: Dict[str, int], include_js: bool | str):
         )]
     )
     fig.update_layout(
-        title="Mask Distribution",
-        xaxis_title="Mask (H1H2H3H4-H5H6H7)",
-        yaxis_title="Number of Files",
+        title=t["chart_mask_title"],
+        xaxis_title=t["chart_x_mask"],
+        yaxis_title=t["chart_y_count"],
         margin=dict(l=40, r=20, t=50, b=60),
         height=340,
     )
@@ -261,7 +262,7 @@ def _build_mask_chart(mask_counts: Dict[str, int], include_js: bool | str):
     )
 
 
-def _build_hypothesis_chart(hypothesis_counts: Dict[str, int], include_js: bool | str):
+def _build_hypothesis_chart(hypothesis_counts: Dict[str, int], include_js: bool | str, t: dict):
     labels = [_HYPOTHESIS_LABELS[h] for h in _HYPOTHESES]
     values = [hypothesis_counts.get(h, 0) for h in _HYPOTHESES]
     colors = ["#0366d6" if h == "H1" else "#d73a49" for h in _HYPOTHESES]
@@ -274,9 +275,9 @@ def _build_hypothesis_chart(hypothesis_counts: Dict[str, int], include_js: bool 
         )]
     )
     fig.update_layout(
-        title="Hypothesis Activation",
-        xaxis_title="Hypothesis",
-        yaxis_title="Files with H = 1",
+        title=t["chart_hypothesis_title"],
+        xaxis_title=t["chart_x_hypothesis"],
+        yaxis_title=t["chart_y_hypothesis"],
         margin=dict(l=40, r=20, t=50, b=80),
         height=340,
     )
@@ -287,7 +288,7 @@ def _build_hypothesis_chart(hypothesis_counts: Dict[str, int], include_js: bool 
     )
 
 
-def _build_extension_chart(extension_counts: Dict[str, int], include_js: bool | str):
+def _build_extension_chart(extension_counts: Dict[str, int], include_js: bool | str, t: dict):
     exts = list(extension_counts.keys())
     counts = [extension_counts[e] for e in exts]
 
@@ -299,7 +300,7 @@ def _build_extension_chart(extension_counts: Dict[str, int], include_js: bool | 
         )]
     )
     fig.update_layout(
-        title="File Types",
+        title=t["chart_extension_title"],
         margin=dict(l=20, r=20, t=50, b=20),
         height=340,
     )
@@ -319,7 +320,7 @@ _TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sieve Lens Dashboard</title>
+<title>{{ t.dashboard_title }}</title>
 <style>
 :root {
   --fg: #1a1a1a;
@@ -465,26 +466,26 @@ footer p { margin: .4rem 0; }
 </head>
 <body>
 
-<h1>Sieve Lens Dashboard</h1>
+<h1>{{ t.dashboard_title }}</h1>
 <p style="color: var(--muted); font-size: .9rem;">
-  Source: <code>{{ input_dir }}</code> &mdash; {{ summary.total_files }} file(s) scanned
+  {{ t.dashboard_source }}: <code>{{ input_dir }}</code> &mdash; {{ summary.total_files }} {{ t.dashboard_scanned }}
 </p>
 
 <div class="summary">
   <div class="card">
-    <div class="card-label">Total Files</div>
+    <div class="card-label">{{ t.summary_total }}</div>
     <div class="card-value">{{ summary.total_files }}</div>
   </div>
   <div class="card ok">
-    <div class="card-label">Clean</div>
+    <div class="card-label">{{ t.summary_clean }}</div>
     <div class="card-value">{{ summary.clean_files }}</div>
   </div>
   <div class="card warn">
-    <div class="card-label">Flagged</div>
+    <div class="card-label">{{ t.summary_flagged }}</div>
     <div class="card-value">{{ summary.flagged_files }}</div>
   </div>
   <div class="card">
-    <div class="card-label">Unparsed</div>
+    <div class="card-label">{{ t.summary_unparsed }}</div>
     <div class="card-value">{{ summary.unparsed_files }}</div>
   </div>
 </div>
@@ -502,10 +503,10 @@ footer p { margin: .4rem 0; }
 <table id="file-table">
 <thead>
 <tr>
-  <th data-sort="file">File</th>
-  <th data-sort="mask">Mask</th>
+  <th data-sort="file">{{ t.table_file }}</th>
+  <th data-sort="mask">{{ t.table_mask }}</th>
   <th>H1 &ndash; H7</th>
-  <th>Evidence</th>
+  <th>{{ t.table_evidence }}</th>
 </tr>
 </thead>
 <tbody>
@@ -527,11 +528,9 @@ footer p { margin: .4rem 0; }
 </table>
 
 <footer>
-<p><strong>This is an observation dashboard, not a judgment of intent.</strong></p>
-<p>Human review is required to determine whether the detected invisible
-content is legitimate or abusive.</p>
-<p>Generated deterministically by Sieve Lens. No timestamps or randomness
-are included.</p>
+<p><strong>{{ t.footer_statement_dashboard }}</strong></p>
+<p>{{ t.footer_human_review }}</p>
+<p>{{ t.footer_deterministic }}</p>
 </footer>
 
 <script>
@@ -616,6 +615,7 @@ def render_dashboard(
     input_dir: str,
     base_dir: Optional[Path] = None,
     standalone: bool = False,
+    lang: str = "en",
 ) -> str:
     if not JINJA2_AVAILABLE or not PLOTLY_AVAILABLE:
         raise ImportError(
@@ -623,17 +623,22 @@ def render_dashboard(
             "Install with: pip install sieve-lens[dashboard]"
         )
 
+    t = get_translations(lang)
+
     # First chart embeds Plotly.js; subsequent charts reuse it.
     include_js_first: bool | str = True if standalone else "cdn"
 
-    chart_mask = _build_mask_chart(summary.mask_counts, include_js_first)
-    chart_hypothesis = _build_hypothesis_chart(summary.hypothesis_counts, False)
-    chart_extension = _build_extension_chart(summary.extension_counts, False)
+    chart_mask = _build_mask_chart(summary.mask_counts, include_js_first, t)
+    chart_hypothesis = _build_hypothesis_chart(summary.hypothesis_counts, False, t)
+    chart_extension = _build_extension_chart(summary.extension_counts, False, t)
 
     rows = [_row_data(obs, base_dir) for obs in observations]
 
+    t = get_translations(lang)
+
     template = Template(_TEMPLATE)
     return template.render(
+        t=t,
         input_dir=html.escape(input_dir),
         summary=summary,
         chart_mask=chart_mask,
@@ -641,6 +646,7 @@ def render_dashboard(
         chart_extension=chart_extension,
         observations=rows,
         hypothesis_keys=_HYPOTHESES,
+        hypothesis_labels={h: _hyp_label(lang, h) for h in _HYPOTHESES},
     )
 
 
@@ -655,6 +661,7 @@ def build_dashboard(
     recursive: bool = True,
     extensions: Optional[Sequence[str]] = None,
     max_workers: Optional[int] = None,
+    lang: str = "auto",
 ) -> Path:
     """Scan a directory, run observations, and write an HTML dashboard.
 
@@ -684,12 +691,24 @@ def build_dashboard(
     observations = analyze_batch(files, max_workers=max_workers)
     summary = build_summary(observations)
 
+    resolved_lang = resolve_language(lang, [obs.source for obs in observations])
+    # Use the first file's text if available for detection; fall back
+    # to file paths otherwise.
+    if resolved_lang == "en" and lang == "auto" and observations:
+        sample_texts = []
+        for obs in observations[:5]:
+            sample_texts.append(obs.source)
+            for seg in obs.segments[:5]:
+                sample_texts.append(seg.text)
+        resolved_lang = resolve_language(lang, sample_texts)
+
     html_text = render_dashboard(
         summary=summary,
         observations=observations,
         input_dir=str(input_dir),
         base_dir=input_dir,
         standalone=standalone,
+        lang=resolved_lang,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
