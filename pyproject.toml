@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sieve-lens"
-version = "0.3.0"
+version = "0.4.0"
 description = "Invisible Prompt Observation Engine (Zero-Dependency, Deterministic)"
 readme = "README.md"
 authors = [
@@ -38,4 +38,5 @@ py-modules = ["sieve_lens"]
 [project.optional-dependencies]
 pdf = ["pypdf>=4.0"]
 ocr = ["Pillow>=10.0", "pytesseract>=0.3.10"]
-all = ["pypdf>=4.0", "Pillow>=10.0", "pytesseract>=0.3.10"]
+html-css = ["tinycss2>=1.1"]
+all = ["pypdf>=4.0", "Pillow>=10.0", "pytesseract>=0.3.10", "tinycss2>=1.1"]

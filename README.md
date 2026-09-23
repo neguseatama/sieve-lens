@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.3.0
+# Sieve Lens v0.4.0
 
 **Invisible Prompt Observation Engine**
 
@@ -58,7 +58,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 | Format | Coverage | Dependencies |
 |--------|----------|--------------|
 | `.txt`, `.md` | Plain text, full character-level scanning | none (core) |
-| `.html`, `.htm` | HTML with inline-style concealment detection | none (core) |
+| `.html`, `.htm` | HTML with inline-style and `<style>` block concealment detection; optional external CSS resolution | none (core); `tinycss2` (optional) |
 | `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
 | `.pdf` | Body text, metadata, annotations, invisible text (Tr 3) | `pypdf` (optional) |
 | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary (optional) |
