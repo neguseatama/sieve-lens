@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0] - 2026-09-24
+
+### Added
+- **Report internationalization (i18n)**: English and Japanese
+  `sieve_lens_ext.i18n` provides translation dictionaries for the
+  dashboard and PDF report templates.
+- `build_dashboard(..., lang="auto")` and `build_pdf_report(..., lang="auto")`
+  auto-detect the language from the input documents (character-script
+  based detection).
+- `lang="en"` or `lang="ja"` forces a specific language.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- i18n uses embedded dictionaries; no external i18n libraries.
+- The language detector is script-based (Hiragana/Katakana/Kanji vs
+  Latin letters), not a general-purpose classifier.
+- The 7-bit observation space is unchanged.
+
 ## [0.8.0] - 2026-09-24
 
 ### Added

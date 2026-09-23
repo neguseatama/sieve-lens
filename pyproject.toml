@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sieve-lens"
-version = "0.8.0"
+version = "0.9.0"
 description = "Invisible Prompt Observation Engine (Zero-Dependency, Deterministic)"
 readme = "README.md"
 authors = [
