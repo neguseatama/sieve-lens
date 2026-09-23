@@ -89,6 +89,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Batch-analyze a directory and produce a single self-contained dashboard
   with summary cards, mask distribution, hypothesis activation charts,
   and a sortable file table. Requires `Jinja2` + `Plotly`.
+- **Printable PDF report** (since v0.6)  
+  Generate an A4 PDF report from a directory of documents. Includes
+  summary, hypothesis table, mask distribution, and a color-coded file
+  list. Requires `weasyprint` (and optionally `kaleido` for charts).
 
 ---
 

@@ -62,3 +62,12 @@ jobs:
     - name: Run Dashboard Extension Test Suite
       run: |
         python -m unittest discover -s tests -p "test_sieve_lens_dashboard.py" -v
+
+    - name: Install PDF Report extension (system + Python)
+      run: |
+        sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libcairo2
+        python -m pip install weasyprint kaleido pypdf
+
+    - name: Run PDF Report Extension Test Suite
+      run: |
+        python -m unittest discover -s tests -p "test_sieve_lens_pdf_report.py" -v
