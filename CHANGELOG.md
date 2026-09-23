@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.0] - 2026-09-24
+
+### Added
+- **PDF embedded image analysis** (optional extension)
+  `sieve_lens_ext.pdf_images.install(engine)` extracts images embedded
+  in PDF pages and applies:
+  - **Transparent layer detection** → H4
+  - **Low-contrast detection** → H4
+  - **OCR text extraction** → body (H2/H3/H6/H7)
+  - **Image metadata** (EXIF / PNG text / XMP) → H5
+- Images smaller than 50x50 pixels are skipped (logos, icons).
+- Duplicate images (same pixel content) are processed once.
+- Processing is capped at 200 images per PDF (defensive).
+- New optional-dependency group: `pip install sieve-lens[pdf-images]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- The `.pdf` extractor is replaced with a combined extractor that runs
+  both the text-based extractor (v0.2) and the new image extractor.
+- Each segment carries `page N, image #M (WxH)` for traceability.
+- The 7-bit observation space is unchanged.
+
 ## [0.9.0] - 2026-09-24
 
 ### Added
