@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.4.0
+# Sieve Lens v0.5.0
 
 **Invisible Prompt Observation Engine**
 
