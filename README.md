@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.1.0
+# Sieve Lens v0.3.0
 
 **Invisible Prompt Observation Engine**
 
@@ -79,8 +79,9 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Every observation carries location and decoded content, so a human can verify.
 - **Observation, not judgment**  
   The engine reports evidence. It never declares "this is an attack".
-- **Self-contained HTML report** (v0.1)  
-  Deterministic, no external resources, greppable `data-mask` attribute.
+- **Self-contained HTML report** (since v0.1)  
+- **PDF support** via `pypdf` (since v0.2)  
+- **Image OCR support** via `Pillow` + `pytesseract` (since v0.3)
 
 ---
 
