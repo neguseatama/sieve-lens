@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0] - 2026-09-23
+
+### Added
+- **Interactive HTML dashboard via `Jinja2` + `Plotly`** (optional extension)
+  `sieve_lens_ext.dashboard.build_dashboard()` scans a directory, runs
+  observations in parallel, and writes a single self-contained HTML file.
+- Dashboard features:
+  - Summary cards (total / clean / flagged / unparsed files)
+  - Mask distribution bar chart (color-coded)
+  - Hypothesis activation bar chart
+  - File extension breakdown pie chart
+  - Sortable, color-coded file table with evidence summaries
+- `standalone` option: embed Plotly.js inline (~3MB) for offline use,
+  or load from CDN for a compact file.
+- New optional-dependency group: `pip install sieve-lens[dashboard]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- The dashboard is deterministic: files are sorted by path, mask counts
+  are sorted, and Plotly div IDs are fixed.
+- No timestamps are included in the HTML output.
+- The 7-bit observation space is unchanged.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
