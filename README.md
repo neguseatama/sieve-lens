@@ -55,13 +55,14 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 
 ## 📦 Supported Formats
 
-| Format | Coverage |
-|--------|----------|
-| `.txt`, `.md` | Plain text, full character-level scanning |
-| `.html`, `.htm` | HTML with inline-style concealment detection |
-| `.docx` | Body, comments, core properties, **headers, footers, footnotes, endnotes** (v0.1) |
+| Format | Coverage | Dependencies |
+|--------|----------|--------------|
+| `.txt`, `.md` | Plain text, full character-level scanning | none (core) |
+| `.html`, `.htm` | HTML with inline-style concealment detection | none (core) |
+| `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
+| `.pdf` | Body text, metadata, annotations, invisible text (Tr 3) | `pypdf` (optional) |
 
-**Not supported in v0.1**: PDF, images, audio, video.
+**Not supported**: images, audio, video.
 
 ---
 
@@ -79,6 +80,17 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   The engine reports evidence. It never declares "this is an attack".
 - **Self-contained HTML report** (v0.1)  
   Deterministic, no external resources, greppable `data-mask` attribute.
+
+---
+
+## 📦 Installation
+
+```bash
+# Core (zero-dependency)
+pip install git+https://github.com/neguseatama/sieve-lens.git
+
+# With PDF support
+pip install "git+https://github.com/neguseatama/sieve-lens.git#egg=sieve-lens[pdf]"
 
 ---
 
@@ -104,17 +116,29 @@ from sieve_lens import write_report_html
 write_report_html(obs, "report.html")
 ```
 
+### PDF (requires the `pdf` extra)
+
+```python
+from sieve_lens import SieveLensEngine
+from sieve_lens_ext.pdf import install
+
+engine = SieveLensEngine()
+install(engine)                    # attach .pdf support
+obs = engine.observe("resume.pdf")
+print(obs.mask)
+
 ---
 
 ## 🔬 Testing
 
-```bash
 # v0 test suite (26 tests)
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
 # v0.1 test suite (14 tests)
 python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
-```
+
+# v0.2 PDF extension (7 tests, requires pypdf)
+python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
 

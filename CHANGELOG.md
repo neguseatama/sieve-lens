@@ -1,10 +1,28 @@
 # Changelog
 
-<<<<<<< HEAD
-## [0.0.1] - 2026-09-23
-=======
+## [0.2.0] - 2026-09-23
+
+### Added
+- **PDF support via `pypdf`** (optional extension)
+  `sieve_lens_ext.pdf.install(engine)` attaches `.pdf` handling.
+- Extracts PDF metadata, page text, annotations, and invisible text
+  (rendering mode `Tr 3`).
+- New public `Extractor` protocol and `SieveLensEngine.register_extractor()`
+  method for user-defined extractors.
+- New optional-dependency groups in `pyproject.toml`:
+  `pip install sieve-lens[pdf]` and `[all]`.
+
+### Design Notes
+- The core library (`sieve_lens.py`) remains zero-dependency.
+- Extensions are opt-in and isolated in the `sieve_lens_ext` package.
+- The 7-bit observation space is unchanged.
+- PDF invisible text is mapped to H4 (Format Concealment), reusing the
+  existing `css_hidden` kind.
+- `pypdf`'s standard `extract_text()` drops zero-width and bidi control
+  characters due to font encoding (WinAnsi). The extension additionally
+  parses the raw content stream to preserve those characters for H2/H3/H7.
+
 ## [0.1.0] - 2026-09-23
->>>>>>> 3cdf31d (release: v0.1.0 - DOCX header/footer/footnote support and HTML report)
 
 ### Added
 - DOCX extraction now covers `word/headerN.xml`, `word/footerN.xml`,
@@ -22,11 +40,6 @@
 - Footnote/endnote separators (`w:type="separator"`) are explicitly ignored.
 
 ### Design Notes
-<<<<<<< HEAD
-- The engine is an observation tool, not a judgment engine.
-- Zero runtime dependencies; standard library only.
-- Deterministic across Python 3.9–3.12.
-=======
 - The 7-bit observation space is unchanged. v0.1 is a strict superset of
   v0.0.1.
 - The HTML report is deterministic and self-contained: no timestamps,
@@ -40,4 +53,3 @@
 - 7-bit observation space (H1–H7)
 - Support for `.txt`, `.md`, `.html`, `.htm`, `.docx`
 - 26-test suite covering all hypotheses and integration scenarios
->>>>>>> 3cdf31d (release: v0.1.0 - DOCX header/footer/footnote support and HTML report)

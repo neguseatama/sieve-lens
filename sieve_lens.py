@@ -1,5 +1,5 @@
 """
-Sieve Lens v0.1.0 - Invisible Prompt Observation Engine
+Sieve Lens v0.2.0 - Invisible Prompt Observation Engine
 
 Sieve Lens observes documents for invisible content that may be intended to
 influence AI-based evaluation systems. It reports evidence; it does not
@@ -7,13 +7,13 @@ judge intent.
 
 Design principles (inherited from the Sieve series):
   - Deterministic : same input yields the same observation, always.
-  - Zero deps     : Python standard library only.
+  - Zero deps     : Python standard library only (core).
   - Explainable   : every observation reports evidence with location.
   - Observation   : reports facts, not judgments.
 
-v0.1.0 adds:
-  - DOCX header / footer / footnote / endnote extraction
-  - Self-contained HTML report generation (format_report_html)
+v0.2.0 adds:
+  - Public `Extractor` protocol and `register_extractor()` for optional
+    format extensions (e.g. sieve_lens_ext.pdf).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 # ----------------------------------------------------------------------
@@ -51,8 +51,6 @@ VARIATION_SELECTORS = frozenset(range(0xFE00, 0xFE10))
 INVISIBLE = ZERO_WIDTH | BIDI_CONTROL | TAG_CHARS | VARIATION_SELECTORS
 
 
-# Kinds considered "out-of-band" for H5. header_footer and footnote are
-# visible but easy to overlook; they are included here by design.
 OOB_KINDS = frozenset({
     "comment", "metadata", "hidden_attr", "header_footer", "footnote",
 })
@@ -66,8 +64,7 @@ OOB_KINDS = frozenset({
 class Segment:
     text: str
     visible: bool
-    kind: str                    # body | css_hidden | comment | metadata |
-                                 # hidden_attr | header_footer | footnote
+    kind: str
     location: Optional[str] = None
 
 
@@ -169,9 +166,18 @@ def decode_invisible_payload(text: str) -> str:
 # 4. Extractors
 # ----------------------------------------------------------------------
 
-class _Extractor:
+class Extractor:
+    """Public protocol for document extractors.
+
+    An extractor is any object with an extract(path) method that returns
+    a list of Segment objects.
+    """
     def extract(self, path: Path) -> List[Segment]:
         raise NotImplementedError
+
+
+class _Extractor(Extractor):
+    pass
 
 
 class _PlainTextExtractor(_Extractor):
@@ -333,7 +339,6 @@ class _DocxExtractor(_Extractor):
             except (KeyError, ET.ParseError):
                 continue
             for idx, note in enumerate(tree.getroot().iter(_w(tag)), start=1):
-                # Skip separator / continuation separator notes.
                 if note.get(_w("type")):
                     continue
                 texts = [(t.text or "") for t in note.iter(_w("t"))]
@@ -408,7 +413,7 @@ class _DocxExtractor(_Extractor):
 # ----------------------------------------------------------------------
 
 class SieveLensEngine:
-    """Sieve Lens v0.1.0 observation engine."""
+    """Sieve Lens v0.2.0 observation engine."""
 
     def __init__(
         self,
@@ -426,6 +431,19 @@ class SieveLensEngine:
             ".htm": _HtmlExtractor(),
             ".docx": _DocxExtractor(),
         }
+
+    def register_extractor(self, extensions, extractor: Extractor) -> None:
+        """Register a custom extractor for one or more file extensions.
+
+        Args:
+            extensions: File suffixes, e.g. [".pdf", ".PDF"]. Case-insensitive.
+                        A leading dot is added automatically if missing.
+            extractor: An object with an extract(path) -> List[Segment] method.
+        """
+        for ext in extensions:
+            if not ext.startswith("."):
+                ext = "." + ext
+            self._extractors[ext.lower()] = extractor
 
     def observe(self, path) -> Observation:
         path = Path(path)
@@ -859,6 +877,7 @@ __all__ = [
     "SieveLensEngine",
     "Observation",
     "Segment",
+    "Extractor",
     "format_report",
     "format_report_html",
     "write_report_html",

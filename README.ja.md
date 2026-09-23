@@ -53,13 +53,14 @@
 
 ## 📦 対応形式
 
-| 形式 | 対応範囲 |
-|------|---------|
-| `.txt` / `.md` | プレーンテキスト、全文字スキャン |
-| `.html` / `.htm` | インライン CSS 隠蔽検出 |
-| `.docx` | 本文・コメント・core プロパティ・**ヘッダー・フッター・脚注・末尾脚注**（v0.1） |
+| 形式 | 対応範囲 | 依存 |
+|------|---------|------|
+| `.txt` / `.md` | プレーンテキスト、全文字スキャン | なし（Core） |
+| `.html` / `.htm` | インライン CSS 隠蔽検出 | なし（Core） |
+| `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
+| `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3） | `pypdf`（オプション） |
 
-**v0.1 非対応**：PDF、画像、音声、動画
+**非対応**：画像、音声、動画
 
 ---
 
@@ -77,6 +78,17 @@
   エンジンは証拠を提示するのみ。「攻撃である」とは宣言しない。
 - **自己完結型 HTML レポート**（v0.1）  
   決定論的、外部リソースなし、`data-mask` 属性で grep 可能。
+
+---
+
+## 📦 インストール
+
+```bash
+# Core（ゼロ依存）
+pip install git+https://github.com/neguseatama/sieve-lens.git
+
+# PDF 対応込み
+pip install "git+https://github.com/neguseatama/sieve-lens.git#egg=sieve-lens[pdf]"
 
 ---
 
@@ -102,17 +114,29 @@ from sieve_lens import write_report_html
 write_report_html(obs, "report.html")
 ```
 
+### PDF（`pdf` オプションが必要）
+
+```python
+from sieve_lens import SieveLensEngine
+from sieve_lens_ext.pdf import install
+
+engine = SieveLensEngine()
+install(engine)                    # .pdf 対応を有効化
+obs = engine.observe("resume.pdf")
+print(obs.mask)
+
 ---
 
 ## 🔬 テスト
 
-```bash
 # v0 テストスイート（26件）
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
 # v0.1 テストスイート（14件）
 python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
-```
+
+# v0.2 PDF 拡張（7件、pypdf 必要）
+python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
 
