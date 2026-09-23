@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from sieve_lens import (
     SieveLensEngine,
+    __version__,
     format_report_html,
     render_markers_html,
     render_markers_text,
@@ -240,7 +241,7 @@ class TestHtmlReport(_Base):
     def test_html_report_includes_version(self):
         obs = self.engine.observe_text("hello")
         html = format_report_html(obs)
-        self.assertIn("0.1.0", html)
+        self.assertIn(__version__, html)
 
     def test_write_report_html(self):
         p = self._make_docx("a.docx", body="Yamada Taro.")
