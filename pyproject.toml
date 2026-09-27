@@ -35,6 +35,9 @@ Repository = "https://github.com/neguseatama/sieve-lens.git"
 [tool.setuptools]
 py-modules = ["sieve_lens"]
 
+[tool.setuptools.packages.find]
+include = ["sieve_lens_ext*"]
+
 [project.optional-dependencies]
 pdf = ["pypdf>=4.0"]
 pdf-images = ["pypdf>=4.0", "Pillow>=10.0", "pytesseract>=0.3.10"]
