@@ -636,10 +636,10 @@ def render_dashboard(
 
     t = get_translations(lang)
 
-    template = Template(_TEMPLATE)
+    template = Template(_TEMPLATE, autoescape=True)
     return template.render(
         t=t,
-        input_dir=html.escape(input_dir),
+        input_dir=input_dir,
         summary=summary,
         chart_mask=chart_mask,
         chart_hypothesis=chart_hypothesis,

@@ -440,10 +440,10 @@ def render_pdf_report_html(
 
     rows = [_row_data(obs, base_dir) for obs in observations]
     t = get_translations(lang)
-    template = Template(_TEMPLATE)
+    template = Template(_TEMPLATE, autoescape=True)
     return template.render(
         t=t,
-        input_dir=html.escape(input_dir),
+        input_dir=input_dir,
         summary=summary,
         observations=rows,
         hypothesis_keys=_HYPOTHESES,
