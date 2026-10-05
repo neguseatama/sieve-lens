@@ -164,6 +164,12 @@ def _selector_matches(
     return True
 
 
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
 # ----------------------------------------------------------------------
 # Extractor
 # ----------------------------------------------------------------------
@@ -177,12 +183,13 @@ class HtmlCssExtractor(html.parser.HTMLParser):
         super().__init__(convert_charrefs=True)
         self.base_dir = base_dir
         self.segments: List[Segment] = []
-        self._stack: List[bool] = []
+        self._stack: List[Tuple[str, bool]] = []
         self._buffer: List[str] = []
         self._in_style_or_script = False
-        self._style_buffer: List[str] = []
+        self._style_buffers: List[List[str]] = []
         self._in_style_tag = False
-        self._pending_link_href: Optional[str] = None
+        self._link_hrefs: List[str] = []
+        self.resolve_local_links = True
 
     # -- public API ----------------------------------------------------
 
@@ -209,19 +216,19 @@ class HtmlCssExtractor(html.parser.HTMLParser):
         self._stack = []
         self._buffer = []
         self._in_style_or_script = False
-        self._style_buffer = []
+        self._style_buffers = []
         self._in_style_tag = False
-        self._pending_link_href = None
+        self._link_hrefs = []
 
     def handle_starttag(self, tag, attrs):
         self._flush()
         tag = tag.lower()
-        attr_dict = {k.lower(): v for k, v in attrs if v is not None}
+        attr_dict = {k.lower(): (v if v is not None else "") for k, v in attrs}
 
         if tag == "style":
             self._in_style_tag = True
             self._in_style_or_script = True
-            self._style_buffer = []
+            self._style_buffers.append([])
             return
 
         if tag in ("script",):
@@ -232,16 +239,18 @@ class HtmlCssExtractor(html.parser.HTMLParser):
             rel = attr_dict.get("rel", "").lower()
             href = attr_dict.get("href", "")
             if "stylesheet" in rel and href:
-                self._pending_link_href = href
+                self._link_hrefs.append(href)
             return
 
         style = attr_dict.get("style", "")
-        hidden = (
+        own_hidden = (
             self._style_is_hidden(style)
             or "hidden" in attr_dict
             or attr_dict.get("aria-hidden") == "true"
         )
-        self._stack.append(hidden)
+        inherited = bool(self._stack and self._stack[-1][1])
+        if tag not in _VOID_ELEMENTS:
+            self._stack.append((tag, own_hidden or inherited))
         line, _ = self.getpos()
 
         for attr_name in ("alt", "title", "aria-label"):
@@ -261,14 +270,18 @@ class HtmlCssExtractor(html.parser.HTMLParser):
         if tag == "style":
             self._in_style_tag = False
             self._in_style_or_script = False
-        elif tag in ("script",):
+            return
+        if tag in ("script",):
             self._in_style_or_script = False
-        if self._stack:
-            self._stack.pop()
+            return
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                break
 
     def handle_data(self, data):
         if self._in_style_tag:
-            self._style_buffer.append(data)
+            self._style_buffers[-1].append(data)
             return
         if self._in_style_or_script:
             return
@@ -293,7 +306,7 @@ class HtmlCssExtractor(html.parser.HTMLParser):
         self._buffer = []
         if not text.strip():
             return
-        hidden = bool(self._stack and self._stack[-1])
+        hidden = bool(self._stack and self._stack[-1][1])
         line, _ = self.getpos()
         self.segments.append(Segment(
             text=text,
@@ -306,17 +319,20 @@ class HtmlCssExtractor(html.parser.HTMLParser):
         """Parse any inline <style> and local <link> stylesheets."""
         css_blobs: List[Tuple[str, str]] = []
 
-        if self._style_buffer:
-            css_blobs.append(("inline <style>", "".join(self._style_buffer)))
+        for buf in self._style_buffers:
+            css = "".join(buf)
+            if css.strip():
+                css_blobs.append(("inline <style>", css))
 
-        if self._pending_link_href:
-            local = self._resolve_local_href(self._pending_link_href)
-            if local is not None:
-                try:
-                    css_text = local.read_text(encoding="utf-8", errors="replace")
-                    css_blobs.append((f"<link> {local.name}", css_text))
-                except Exception:
-                    pass
+        if self.resolve_local_links:
+            for href in self._link_hrefs:
+                local = self._resolve_local_href(href)
+                if local is not None:
+                    try:
+                        css_text = local.read_text(encoding="utf-8", errors="replace")
+                        css_blobs.append((f"<link> {local.name}", css_text))
+                    except Exception:
+                        pass
 
         for source_label, css_text in css_blobs:
             self._scan_css(css_text, source_label)
@@ -361,8 +377,6 @@ class HtmlCssExtractor(html.parser.HTMLParser):
             for decl in declarations:
                 if not isinstance(decl, Declaration):
                     continue
-                if decl.important:
-                    continue
                 value_text = tinycss2.serialize(decl.value).strip()
                 if _is_hidden_declaration(decl.name, value_text):
                     line = getattr(rule, "source_line", None)
@@ -400,4 +414,5 @@ def install(engine, resolve_local_links: bool = True) -> None:
             to local files are resolved. Remote URLs are always ignored.
     """
     extractor = HtmlCssExtractor()
+    extractor.resolve_local_links = resolve_local_links
     engine.register_extractor([".html", ".htm"], extractor)
