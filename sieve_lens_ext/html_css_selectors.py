@@ -15,6 +15,12 @@ Supports (in addition to v0.4):
 Hidden CSS rules are only reported when their selector matches at least
 one element in the HTML tree.
 
+v0.11.0 fix (#31): document body text is now emitted as segments (with
+hidden-state inheritance from ancestors), restoring H2/H3/H6/H7
+detection for HTML documents. Previously this extractor emitted NO body
+text at all, silently disabling those hypotheses whenever it was
+installed.
+
 Requires: tinycss2 >= 1.1, cssselect2 >= 0.7
 
 Install with:
@@ -58,14 +64,15 @@ from sieve_lens_ext.html_css import _is_hidden_declaration
 # ----------------------------------------------------------------------
 
 class _Element:
-    __slots__ = ("tag", "attrib", "text", "tail", "children")
+    __slots__ = ("tag", "attrib", "text", "tail", "children", "line")
 
-    def __init__(self, tag: str, attrib: Dict[str, str]):
+    def __init__(self, tag: str, attrib: Dict[str, str], line: int = 0):
         self.tag = tag
         self.attrib = attrib
         self.text = ""
         self.tail = ""
         self.children: List["_Element"] = []
+        self.line = line
 
     def get(self, key, default=None):
         return self.attrib.get(key, default)
@@ -90,7 +97,7 @@ class _TreeBuilder(html.parser.HTMLParser):
         self._stack: List[_Element] = [self.root]
         self._in_style = False
         self._in_script = False
-        self._style_buffer: List[str] = []
+        self._style_buffers: List[List[str]] = []
         self.comments: List[Tuple[int, str]] = []
         self.stylesheet_links: List[str] = []
         self.inline_hidden: List[Tuple[_Element, int]] = []
@@ -100,12 +107,12 @@ class _TreeBuilder(html.parser.HTMLParser):
         tag = tag.lower()
         attr_dict: Dict[str, str] = {}
         for k, v in attrs:
-            if v is not None:
-                attr_dict[k.lower()] = v
+            # Keep valueless attributes (e.g. bare "hidden") as "".
+            attr_dict[k.lower()] = v if v is not None else ""
 
         if tag == "style":
             self._in_style = True
-            self._style_buffer = []
+            self._style_buffers.append([])
             return
         if tag == "script":
             self._in_script = True
@@ -121,6 +128,7 @@ class _TreeBuilder(html.parser.HTMLParser):
         self._stack[-1].children.append(elem)
 
         line, _ = self.getpos()
+        elem.line = line
         style = attr_dict.get("style", "")
         hidden = (
             _style_is_hidden(style)
@@ -156,7 +164,7 @@ class _TreeBuilder(html.parser.HTMLParser):
 
     def handle_data(self, data):
         if self._in_style:
-            self._style_buffer.append(data)
+            self._style_buffers[-1].append(data)
             return
         if self._in_script:
             return
@@ -207,10 +215,15 @@ class HtmlCssSelectorsExtractor:
 
         segments: List[Segment] = []
 
-        # CSS sources
+        # v0.11.0 fix (#31): emit body text with hidden-state inheritance.
+        segments.extend(self._emit_text_segments(builder.root))
+
+        # CSS sources: every <style> block and every local <link>.
         css_blobs: List[Tuple[str, str]] = []
-        if builder._style_buffer:
-            css_blobs.append(("inline <style>", "".join(builder._style_buffer)))
+        for buf in builder._style_buffers:
+            css = "".join(buf)
+            if css.strip():
+                css_blobs.append(("inline <style>", css))
         for href in builder.stylesheet_links:
             local = self._resolve_local_href(href, path.parent)
             if local is not None:
@@ -243,6 +256,32 @@ class HtmlCssSelectorsExtractor:
                 location=f"line {line}",
             ))
 
+        return segments
+
+    def _emit_text_segments(self, root: "_Element") -> List[Segment]:
+        """Emit body segments for all element text, honoring the
+        hidden state inherited from ancestors (#31)."""
+        segments: List[Segment] = []
+
+        def walk(elem: "_Element", inherited_hidden: bool):
+            for child in elem.children:
+                style = child.attrib.get("style", "")
+                own = (
+                    _style_is_hidden(style)
+                    or "hidden" in child.attrib
+                    or child.attrib.get("aria-hidden") == "true"
+                )
+                hidden = inherited_hidden or own
+                if child.text and child.text.strip():
+                    segments.append(Segment(
+                        text=child.text,
+                        visible=not hidden,
+                        kind="css_hidden" if hidden else "body",
+                        location=f"line {child.line}, <{child.tag}>",
+                    ))
+                walk(child, hidden)
+
+        walk(root, False)
         return segments
 
     def _scan_css(self, css_text: str, label: str, wrappers: List) -> List[Segment]:
@@ -284,6 +323,7 @@ class HtmlCssSelectorsExtractor:
                 continue
 
             matched = False
+            match_count = 0
             for sel in compiled:
                 try:
                     test_fn = sel.test
@@ -307,16 +347,11 @@ class HtmlCssSelectorsExtractor:
                     elif isinstance(result, int) and result == 0:
                         continue
                     matched = True
-                    break
+                    match_count += 1
                 if matched:
                     break
 
             if not matched:
-                continue
-
-            match_count = 1
-
-            if match_count == 0:
                 continue
 
             line = getattr(rule, "source_line", None)
