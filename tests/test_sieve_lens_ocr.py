@@ -102,6 +102,7 @@ def _pnginfo(d: dict):
     PIL_AVAILABLE and PYTESSERACT_AVAILABLE,
     "Pillow or pytesseract not installed",
 )
+@unittest.skipUnless(__import__("shutil").which("tesseract"), "tesseract binary not installed")
 class TestOcrExtensionOcrText(unittest.TestCase):
     """Tests that require the tesseract binary."""
 
