@@ -43,7 +43,7 @@ from typing import List, Optional, Sequence
 try:
     from weasyprint import HTML
     WEASYPRINT_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     WEASYPRINT_AVAILABLE = False
 
 try:
@@ -150,6 +150,10 @@ _TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- v0.11.0 fix (#16): fixed timestamps make the PDF byte-deterministic.
+     WeasyPrint adopts these as the PDF creation/modification dates. -->
+<meta name="dcterms.created" content="2000-01-01T00:00:00Z">
+<meta name="dcterms.modified" content="2000-01-01T00:00:00Z">
 <title>{{ t.report_title }}</title>
 <style>
 @page {
