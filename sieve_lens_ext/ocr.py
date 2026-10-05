@@ -111,18 +111,30 @@ class ImageOcrExtractor:
         if not exif:
             return segments
 
-        for tag_id, raw in exif.items():
-            name = self._EXIF_TEXT_TAGS.get(tag_id)
-            if not name:
-                continue
-            text = self._decode_exif_value(tag_id, raw)
-            if text and len(text.strip()) >= self._OOB_MIN_LENGTH:
-                segments.append(Segment(
-                    text=text.strip(),
-                    visible=False,
-                    kind="metadata",
-                    location=f"EXIF / {name} (tag {tag_id})",
-                ))
+        # v0.11.0 fix (#2): scan the Exif SubIFD as well. UserComment
+        # (tag 37510) lives in IFD 0x8769, which getexif().items() alone
+        # never exposes; previously this tag was never read.
+        sources = [exif]
+        try:
+            sub = exif.get_ifd(0x8769)
+            if sub:
+                sources.append(sub)
+        except Exception:
+            pass
+
+        for src in sources:
+            for tag_id, raw in src.items():
+                name = self._EXIF_TEXT_TAGS.get(tag_id)
+                if not name:
+                    continue
+                text = self._decode_exif_value(tag_id, raw)
+                if text and len(text.strip()) >= self._OOB_MIN_LENGTH:
+                    segments.append(Segment(
+                        text=text.strip(),
+                        visible=False,
+                        kind="metadata",
+                        location=f"EXIF / {name} (tag {tag_id})",
+                    ))
         return segments
 
     @staticmethod
