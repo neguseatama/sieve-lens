@@ -190,13 +190,25 @@ class ImageLayersExtractor:
 
 
 def install(engine) -> None:
-    """Replace the image extractor with the layer-aware one.
+    """Chain the layer-aware extractor onto the existing image extractor
+    (e.g. sieve_lens_ext.ocr) instead of replacing it, so metadata (H5)
+    and pixel-level analysis (H4) both survive. v0.11.0 fix (#1).
 
-    This installs on the same extensions as sieve_lens_ext.ocr, so
-    install this one *after* the OCR extension to combine both.
+    If no image extractor is registered yet, register the layer
+    extractor standalone.
     """
-    extractor = ImageLayersExtractor()
-    engine.register_extractor(ImageLayersExtractor.EXTENSIONS, extractor)
+    layer = ImageLayersExtractor()
+    exts = list(ImageLayersExtractor.EXTENSIONS)
+    base = engine.get_extractor(exts[0])
+    if base is None:
+        engine.register_extractor(exts, layer)
+        return
+
+    class _Chained:
+        def extract(self, path):
+            return base.extract(path) + layer.extract(path)
+
+    engine.register_extractor(exts, _Chained())
 
 
 __all__ = ["ImageLayersExtractor", "install"]

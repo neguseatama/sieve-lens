@@ -442,6 +442,14 @@ class SieveLensEngine:
             ".docx": _DocxExtractor(),
         }
 
+    def get_extractor(self, extension: str) -> Optional[Extractor]:
+        """Return the currently registered extractor for an extension,
+        or None. Enables chained installs (e.g. image_layers layered
+        on top of ocr)."""
+        if not extension.startswith("."):
+            extension = "." + extension
+        return self._extractors.get(extension.lower())
+
     def register_extractor(self, extensions, extractor: Extractor) -> None:
         """Register a custom extractor for one or more file extensions.
 
