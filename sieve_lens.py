@@ -46,7 +46,7 @@ BIDI_CONTROL = frozenset({
 })
 
 TAG_CHARS = frozenset(range(0xE0000, 0xE0080))
-VARIATION_SELECTORS = frozenset(range(0xFE00, 0xFE10))
+VARIATION_SELECTORS = frozenset(range(0xFE00, 0xFE10)) | frozenset(range(0xE0100, 0xE01F0))
 
 INVISIBLE = ZERO_WIDTH | BIDI_CONTROL | TAG_CHARS | VARIATION_SELECTORS
 
@@ -200,11 +200,17 @@ def _is_hidden_style(style: str) -> bool:
     return any(p.search(style) for p in _HIDDEN_CSS_PATTERNS)
 
 
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
 class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.segments: List[Segment] = []
-        self._stack: List[bool] = []
+        self._stack: List[Tuple[str, bool]] = []
         self._buffer: List[str] = []
         self._in_style_or_script = False
 
@@ -227,14 +233,16 @@ class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
         self._flush()
         if tag in ("style", "script"):
             self._in_style_or_script = True
-        attr_dict = {k.lower(): v for k, v in attrs if v is not None}
+        attr_dict = {k.lower(): (v if v is not None else "") for k, v in attrs}
         style = attr_dict.get("style", "")
-        hidden = (
+        own_hidden = (
             _is_hidden_style(style)
             or "hidden" in attr_dict
             or attr_dict.get("aria-hidden") == "true"
         )
-        self._stack.append(hidden)
+        inherited = bool(self._stack and self._stack[-1][1])
+        if tag not in _VOID_ELEMENTS:
+            self._stack.append((tag, own_hidden or inherited))
         line, _ = self.getpos()
         for attr_name in ("alt", "title", "aria-label"):
             val = attr_dict.get(attr_name)
@@ -248,8 +256,10 @@ class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
         self._flush()
         if tag in ("style", "script"):
             self._in_style_or_script = False
-        if self._stack:
-            self._stack.pop()
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                break
 
     def handle_data(self, data):
         if self._in_style_or_script:
@@ -273,7 +283,7 @@ class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
         self._buffer = []
         if not text.strip():
             return
-        hidden = bool(self._stack and self._stack[-1])
+        hidden = bool(self._stack and self._stack[-1][1])
         line, _ = self.getpos()
         self.segments.append(Segment(
             text=text,
