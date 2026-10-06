@@ -2,37 +2,6 @@
 
 # Sieve Lens v0.11.0
 
-## v0.11.0 Highlights
-
-- **Fixed critical regressions**: PDF embedded-image analysis and HTML body
-  text extraction (which had silently disabled H2/H3/H6/H7 detection), and
-  EXIF UserComment/SubIFD reading.
-- **Security**: report output is now HTML-escaped (untrusted specimens can no
-  longer inject markup into dashboards/PDF reports), and local stylesheet
-  resolution is confined to the specimen's directory tree.
-- **Deterministic PDF reports**: byte-identical output across builds,
-  verified in CI (fixed dcterms dates + pinned XMP DocumentID).
-- **Chained extensions**: `sieve_lens_ext.image_layers` now composes with
-  `sieve_lens_ext.ocr` automatically; new `SieveLensEngine.get_extractor()`.
-
-**Invisible Prompt Observation Engine**
-
-*Sieve Lens is not a tool that distrusts AI.*  
-*It is a tool that helps AI receive trustworthy input.*
-
-> Zero-dependency, deterministic, explainable observation of invisible content
-> in documents (resumes, submissions, reports) that may be intended to
-> influence AI-based evaluation systems.
-
-Extends the [Sieve](https://github.com/neguseatama/sieve-core) series to the
-domain of **machine-readable vs. human-visible divergence**.
-
-[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
-
----
-
 ## 💡 Concept
 
 Modern AI evaluation systems parse documents as text.
@@ -180,6 +149,37 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
 # v0.2 PDF extension (7 tests, requires pypdf)
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
+
+---
+
+## v0.11.0 Highlights
+
+- **Fixed critical regressions**: PDF embedded-image analysis and HTML body
+  text extraction (which had silently disabled H2/H3/H6/H7 detection), and
+  EXIF UserComment/SubIFD reading.
+- **Security**: report output is now HTML-escaped (untrusted specimens can no
+  longer inject markup into dashboards/PDF reports), and local stylesheet
+  resolution is confined to the specimen's directory tree.
+- **Deterministic PDF reports**: byte-identical output across builds,
+  verified in CI (fixed dcterms dates + pinned XMP DocumentID).
+- **Chained extensions**: `sieve_lens_ext.image_layers` now composes with
+  `sieve_lens_ext.ocr` automatically; new `SieveLensEngine.get_extractor()`.
+
+**Invisible Prompt Observation Engine**
+
+*Sieve Lens is not a tool that distrusts AI.*  
+*It is a tool that helps AI receive trustworthy input.*
+
+> Zero-dependency, deterministic, explainable observation of invisible content
+> in documents (resumes, submissions, reports) that may be intended to
+> influence AI-based evaluation systems.
+
+Extends the [Sieve](https://github.com/neguseatama/sieve-core) series to the
+domain of **machine-readable vs. human-visible divergence**.
+
+[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 
 ---
 

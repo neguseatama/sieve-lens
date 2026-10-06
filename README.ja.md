@@ -2,36 +2,6 @@
 
 # Sieve Lens v0.11.0
 
-## v0.11.0 ハイライト
-
-- **重大な不具合を修正**: PDF 埋め込み画像解析・HTML 本文抽出（H2/H3/H6/H7 の
-  検出が無効化されていました）・EXIF UserComment/SubIFD の読み取り。
-- **セキュリティ**: レポート出力を HTML エスケープ（悪意ある検体が
-  ダッシュボード/PDF レポートへマークアップを注入できなくなりました）。
-  ローカル stylesheet の解決を検体ディレクトリ配下に制限。
-- **決定論的 PDF レポート**: ビルド間でバイト一致することを CI で実証
-  （dcterms 日時の固定＋XMP DocumentID の固定）。
-- **拡張のチェーン化**: `sieve_lens_ext.image_layers` が
-  `sieve_lens_ext.ocr` と自動的に合成されるように。新 API
-  `SieveLensEngine.get_extractor()` を追加。
-
-**不可視プロンプト観測エンジン**
-
-*Sieve Lens は、AI を疑うための道具ではない。*  
-*AI が信頼できる入力を受け取るための道具である。*
-
-> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」を、
-> 決定論的・ゼロ依存・説明可能な形で観測するエンジンです。
-
-[Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
-**「機械可読性と人間可視性の乖離」** という新しいドメインへ拡張しました。
-
-[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
-
----
-
 ## 💡 コンセプト
 
 現代の AI 審査システムは、文書をテキストとして解析します。  
@@ -178,6 +148,36 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
 # v0.2 PDF 拡張（7件、pypdf 必要）
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
+
+---
+
+## v0.11.0 ハイライト
+
+- **重大な不具合を修正**: PDF 埋め込み画像解析・HTML 本文抽出（H2/H3/H6/H7 の
+  検出が無効化されていました）・EXIF UserComment/SubIFD の読み取り。
+- **セキュリティ**: レポート出力を HTML エスケープ（悪意ある検体が
+  ダッシュボード/PDF レポートへマークアップを注入できなくなりました）。
+  ローカル stylesheet の解決を検体ディレクトリ配下に制限。
+- **決定論的 PDF レポート**: ビルド間でバイト一致することを CI で実証
+  （dcterms 日時の固定＋XMP DocumentID の固定）。
+- **拡張のチェーン化**: `sieve_lens_ext.image_layers` が
+  `sieve_lens_ext.ocr` と自動的に合成されるように。新 API
+  `SieveLensEngine.get_extractor()` を追加。
+
+**不可視プロンプト観測エンジン**
+
+*Sieve Lens は、AI を疑うための道具ではない。*  
+*AI が信頼できる入力を受け取るための道具である。*
+
+> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」を、
+> 決定論的・ゼロ依存・説明可能な形で観測するエンジンです。
+
+[Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
+**「機械可読性と人間可視性の乖離」** という新しいドメインへ拡張しました。
+
+[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 
 ---
 
