@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import html
+import re
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence
@@ -485,6 +486,72 @@ def _pdf_pin_xmp(data):
     return bytes(out)
 
 
+_XMP_FIXED_STR = "xmp.did:00000000-0000-0000-0000-000000000000"
+
+
+def _pdf_pin_xmp_str(data):
+    """Str variant: the XMP packet may be serialized as str."""
+    if not isinstance(data, str) or "xmp.did:" not in data:
+        return None
+    return re.sub(r"xmp\.did:[^<]*", _XMP_FIXED_STR, data)
+
+
+def _pdf_determinize_objects(objects):
+    """Pin volatile fields across a pydyf object graph.
+
+    pydyf ground truth (read from pydyf/__init__.py): pdf.objects is a
+    list of Object instances - NOT dicts/lists. A Stream payload lives in
+    obj.stream (a list of bytes/str chunks) and object metadata in
+    obj.extra (a Dictionary, i.e. a dict subclass). A walk that only
+    recurses dicts/lists silently skips every Object and never reaches
+    the font or XMP bytes. Descend explicitly:
+
+      objects (list) -> Object -> .stream (list) -> bytes/str chunks
+                                 -> .extra  (dict) -> values
+    """
+    def rewrite(data):
+        if isinstance(data, bytes):
+            result = data
+            changed = False
+            fixed = _pdf_determinize_font(result)
+            if fixed is not None:
+                result = fixed
+                changed = True
+            fixed = _pdf_pin_xmp(result)
+            if fixed is not None:
+                result = fixed
+                changed = True
+            return result if changed else None
+        if isinstance(data, str):
+            return _pdf_pin_xmp_str(data)
+        return None
+
+    def walk(container):
+        if isinstance(container, dict):
+            for key in list(container.keys()):
+                new = rewrite(container[key])
+                if new is not None:
+                    container[key] = new
+                else:
+                    walk(container[key])
+        elif isinstance(container, (list, tuple)):
+            for i in range(len(container)):
+                new = rewrite(container[i])
+                if new is not None:
+                    container[i] = new
+                else:
+                    walk(container[i])
+        else:
+            stream = getattr(container, "stream", None)
+            if isinstance(stream, list):
+                walk(stream)
+            extra = getattr(container, "extra", None)
+            if extra is not None and extra is not stream:
+                walk(extra)
+
+    walk(objects)
+
+
 def _pdf_determinize_font(data):
     """Zero volatile fields of an embedded sfnt (TrueType/OpenType) font:
     head.checkSumAdjustment and head.created / head.modified. fontTools
@@ -604,40 +671,10 @@ def build_pdf_report(
         #   3. xmp.did -> uuid4() in the XMP DocumentID is rewritten to a
         #      fixed value by this finisher (weasyprint metadata.py:129).
         def _determinize(document_arg, pdf_arg):
-            def rewrite(data):
-                if not isinstance(data, bytes):
-                    return None
-                result = data
-                changed = False
-                fixed = _pdf_determinize_font(result)
-                if fixed is not None:
-                    result = fixed
-                    changed = True
-                fixed = _pdf_pin_xmp(result)
-                if fixed is not None:
-                    result = fixed
-                    changed = True
-                return result if changed else None
-
-            def walk(container):
-                # Structure-agnostic: recurse dicts/lists in place.
-                # No indexing, no key assumptions - cannot raise.
-                if isinstance(container, dict):
-                    for key, value in list(container.items()):
-                        new = rewrite(value)
-                        if new is not None:
-                            container[key] = new
-                        else:
-                            walk(value)
-                elif isinstance(container, list):
-                    for i, value in enumerate(container):
-                        new = rewrite(value)
-                        if new is not None:
-                            container[i] = new
-                        else:
-                            walk(value)
-
-            walk(pdf_arg.objects)
+            # Descend the REAL pydyf structure (see _pdf_determinize_objects):
+            # Object instances expose .stream (list) / .extra (dict); plain
+            # dict/list recursion never reaches the font or XMP payloads.
+            _pdf_determinize_objects(pdf_arg.objects)
 
         doc.write_pdf(
             target=str(output_path),
