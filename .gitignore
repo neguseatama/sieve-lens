@@ -29,3 +29,4 @@ Thumbs.db
 # Sieve Lens generated reports
 reports/
 *.observation.txt
+AGENTS.md
