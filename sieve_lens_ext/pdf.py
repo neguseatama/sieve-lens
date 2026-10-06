@@ -30,7 +30,7 @@ Requires: pypdf >= 4.0
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 try:
     from pypdf import PdfReader
@@ -65,7 +65,6 @@ class PdfExtractor:
             for page_num, page in enumerate(reader.pages, start=1):
                 segments.extend(self._extract_page_text(page, page_num, reader))
                 segments.extend(self._extract_annotations(page, page_num))
-                segments.extend(self._extract_invisible_text(page, page_num, reader))
         return segments
 
     def _extract_metadata(self, reader) -> List[Segment]:
@@ -96,6 +95,10 @@ class PdfExtractor:
         Uses pypdf's standard extract_text for natural reading order,
         and additionally includes raw content stream text when it
         contains invisible characters that the standard extraction lost.
+
+        v0.11.0 perf: the content stream is built and walked once,
+        collecting both the full operand text and the Tr-3 invisible
+        text in a single pass (previously two full scans per page).
         """
         segments: List[Segment] = []
 
@@ -111,7 +114,7 @@ class PdfExtractor:
                 location=f"page {page_num}",
             ))
 
-        raw = self._raw_stream_text(page, reader)
+        raw, hidden = self._scan_stream_once(page, reader)
         if raw and self._contains_invisible(raw) and not self._contains_invisible(text):
             segments.append(Segment(
                 text=raw,
@@ -119,41 +122,65 @@ class PdfExtractor:
                 kind="body",
                 location=f"page {page_num} (raw stream)",
             ))
+        if hidden:
+            segments.append(Segment(
+                text=hidden,
+                visible=False,
+                kind="css_hidden",
+                location=f"page {page_num} (invisible text, Tr 3)",
+            ))
 
         return segments
 
-    def _raw_stream_text(self, page, reader) -> str:
-        """Extract all text-showing operands from the raw content stream.
+    def _scan_stream_once(self, page, reader) -> Tuple[str, str]:
+        """Single pass over the content stream (perf, v0.11.0).
 
-        This bypasses the font encoding and preserves characters that
-        pypdf's standard extraction would drop (zero-width, bidi, etc.).
+        Returns (raw_text, tr3_text):
+          raw_text -- every text-showing operand, bypassing the font
+                      encoding (preserves zero-width/bidi characters
+                      that pypdf's standard extraction would drop);
+          tr3_text -- only operands shown in rendering mode Tr 3
+                      (invisible text).
         """
         try:
             contents = page.get("/Contents")
         except Exception:
-            return ""
+            return "", ""
         if contents is None:
-            return ""
+            return "", ""
         try:
             stream = ContentStream(contents, reader)
         except Exception:
-            return ""
+            return "", ""
 
-        parts: List[str] = []
+        raw_parts: List[str] = []
+        tr3_parts: List[str] = []
+        tr_mode = 0
         for operands, operator in stream.operations:
             try:
-                if operator in (b"Tj", b"'"):
-                    parts.append(self._decode(operands[0]))
+                if operator == b"Tr":
+                    tr_mode = int(operands[0])
+                elif operator in (b"Tj", b"'"):
+                    s = self._decode(operands[0])
+                    raw_parts.append(s)
+                    if tr_mode == 3:
+                        tr3_parts.append(s)
                 elif operator == b'"':
-                    parts.append(self._decode(operands[-1]))
+                    s = self._decode(operands[-1])
+                    raw_parts.append(s)
+                    if tr_mode == 3:
+                        tr3_parts.append(s)
                 elif operator == b"TJ":
                     items = operands[0]
                     for item in items:
                         if isinstance(item, (bytes, str)):
-                            parts.append(self._decode(item))
+                            s = self._decode(item)
+                            raw_parts.append(s)
+                            if tr_mode == 3:
+                                tr3_parts.append(s)
             except Exception:
                 continue
-        return "".join(parts)
+        return "".join(raw_parts), "".join(tr3_parts)
 
     @staticmethod
     def _contains_invisible(text: str) -> bool:
@@ -189,49 +216,6 @@ class PdfExtractor:
                 ))
         return segments
 
-    def _extract_invisible_text(self, page, page_num: int, reader) -> List[Segment]:
-        try:
-            contents = page.get("/Contents")
-        except Exception:
-            return []
-        if contents is None:
-            return []
-        try:
-            stream = ContentStream(contents, reader)
-        except Exception:
-            return []
-
-        tr_mode = 0
-        buffer: List[str] = []
-
-        for operands, operator in stream.operations:
-            try:
-                if operator == b"Tr":
-                    tr_mode = int(operands[0])
-                elif operator in (b"Tj", b"'"):
-                    if tr_mode == 3:
-                        buffer.append(self._decode(operands[0]))
-                elif operator == b'"':
-                    if tr_mode == 3:
-                        buffer.append(self._decode(operands[-1]))
-                elif operator == b"TJ":
-                    items = operands[0]
-                    for item in items:
-                        if isinstance(item, (bytes, str)):
-                            if tr_mode == 3:
-                                buffer.append(self._decode(item))
-            except Exception:
-                continue
-
-        hidden = "".join(buffer).strip()
-        if not hidden:
-            return []
-        return [Segment(
-            text=hidden,
-            visible=False,
-            kind="css_hidden",
-            location=f"page {page_num} (invisible text, Tr 3)",
-        )]
 
     @staticmethod
     def _decode(s) -> str:
