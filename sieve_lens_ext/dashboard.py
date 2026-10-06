@@ -79,28 +79,37 @@ _HYPOTHESIS_LABELS = {
 # Engine construction
 # ----------------------------------------------------------------------
 
+_EXTENSION_INSTALLERS = (
+    "sieve_lens_ext.pdf:install",
+    "sieve_lens_ext.ocr:install",
+    "sieve_lens_ext.image_layers:install",
+    "sieve_lens_ext.html_css:install",
+    "sieve_lens_ext.html_css_selectors:install",
+    "sieve_lens_ext.pdf_images:install",
+)
+
+
 def _build_engine() -> SieveLensEngine:
-    """Build a SieveLensEngine with all available extensions installed."""
+    """Build a SieveLensEngine with all available extensions installed.
+
+    Order matters: image_layers must come after ocr (it chains onto the
+    OCR extractor since P6), html_css_selectors after html_css (the last
+    installed extractor wins for .html/.htm), and pdf_images after pdf
+    (it replaces .pdf with the combined text+image extractor).
+    """
+    import importlib
+
     engine = SieveLensEngine()
-
-    try:
-        from sieve_lens_ext.pdf import install as pdf_install
-        pdf_install(engine)
-    except ImportError:
-        pass
-
-    try:
-        from sieve_lens_ext.ocr import install as ocr_install
-        ocr_install(engine)
-    except ImportError:
-        pass
-
-    try:
-        from sieve_lens_ext.html_css import install as html_css_install
-        html_css_install(engine)
-    except ImportError:
-        pass
-
+    for spec in _EXTENSION_INSTALLERS:
+        mod_name, _, fn_name = spec.partition(":")
+        try:
+            mod = importlib.import_module(mod_name)
+        except ImportError:
+            continue
+        try:
+            getattr(mod, fn_name)(engine)
+        except Exception:
+            continue
     return engine
 
 
