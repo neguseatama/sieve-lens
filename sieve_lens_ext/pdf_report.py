@@ -584,6 +584,11 @@ def build_pdf_report(
             target=str(output_path),
             presentational_hints=False,
             optimize_images=True,
+            # CI-verified: zlib stream compression of embedded fonts is
+            # not byte-stable across runs (Length 3930 vs 3931 in the
+            # same font). Disabling stream compression removes the last
+            # nondeterminism source; the xmp.did pin stays via finisher.
+            uncompressed_pdf=True,
             finisher=_pin_xmp_uuid,
         )
 
