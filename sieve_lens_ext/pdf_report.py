@@ -59,7 +59,7 @@ try:
 except ImportError:
     KALEIDO_AVAILABLE = False
 
-from sieve_lens import Observation
+from sieve_lens import Observation, __version__
 from sieve_lens_ext.i18n import get_translations, resolve_language, hypothesis_label as _hyp_label
 from sieve_lens_ext.dashboard import (
     _HYPOTHESES,
@@ -437,11 +437,12 @@ def render_pdf_report_html(
     base_dir: Optional[Path] = None,
     chart_mask_path: Optional[Path] = None,
     chart_hypothesis_path: Optional[Path] = None,
-    version: str = "0.9.0",
+    version: Optional[str] = None,
     lang: str = "en",
 ) -> str:
     from jinja2 import Template
 
+    version = version or __version__
     rows = [_row_data(obs, base_dir) for obs in observations]
     t = get_translations(lang)
     template = Template(_TEMPLATE, autoescape=True)

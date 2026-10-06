@@ -24,9 +24,6 @@ from __future__ import annotations
 from typing import Iterable, List
 
 
-__version__ = "0.9.0"
-
-
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         # Dashboard

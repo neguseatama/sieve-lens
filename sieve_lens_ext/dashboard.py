@@ -272,7 +272,7 @@ def _build_mask_chart(mask_counts: Dict[str, int], include_js: bool | str, t: di
 
 
 def _build_hypothesis_chart(hypothesis_counts: Dict[str, int], include_js: bool | str, t: dict):
-    labels = [_HYPOTHESIS_LABELS[h] for h in _HYPOTHESES]
+    labels = [t.get(f"hyp_{h}", _HYPOTHESIS_LABELS[h]) for h in _HYPOTHESES]
     values = [hypothesis_counts.get(h, 0) for h in _HYPOTHESES]
     colors = ["#0366d6" if h == "H1" else "#d73a49" for h in _HYPOTHESES]
 
@@ -643,8 +643,6 @@ def render_dashboard(
 
     rows = [_row_data(obs, base_dir) for obs in observations]
 
-    t = get_translations(lang)
-
     template = Template(_TEMPLATE, autoescape=True)
     return template.render(
         t=t,
@@ -655,7 +653,6 @@ def render_dashboard(
         chart_extension=chart_extension,
         observations=rows,
         hypothesis_keys=_HYPOTHESES,
-        hypothesis_labels={h: _hyp_label(lang, h) for h in _HYPOTHESES},
     )
 
 
