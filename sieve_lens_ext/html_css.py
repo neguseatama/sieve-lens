@@ -338,7 +338,13 @@ class HtmlCssExtractor(html.parser.HTMLParser):
             self._scan_css(css_text, source_label)
 
     def _resolve_local_href(self, href: str) -> Optional[Path]:
-        """Resolve a href to a local file path, or None if remote/unsafe."""
+        """Resolve a href to a local file path, or None if remote/unsafe.
+
+        v0.11.0 hardening: only stylesheets inside the specimen's
+        directory tree are served. Absolute paths and ../ escapes are
+        rejected, so a specimen cannot make the scanner read arbitrary
+        local files.
+        """
         parsed = urlparse(href)
         if parsed.scheme in ("http", "https", "data", "javascript"):
             return None
@@ -346,14 +352,20 @@ class HtmlCssExtractor(html.parser.HTMLParser):
             candidate = Path(unquote(parsed.path))
         else:
             candidate = Path(unquote(href))
+        base = self.base_dir or Path.cwd()
         if not candidate.is_absolute():
-            base = self.base_dir or Path.cwd()
             candidate = base / candidate
         try:
             candidate = candidate.resolve()
+            base_root = base.resolve()
         except Exception:
             return None
         if not candidate.is_file():
+            return None
+        try:
+            if not candidate.is_relative_to(base_root):
+                return None
+        except Exception:
             return None
         return candidate
 

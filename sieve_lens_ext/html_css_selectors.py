@@ -400,6 +400,12 @@ class HtmlCssSelectorsExtractor:
         return wrappers
 
     def _resolve_local_href(self, href: str, base_dir: Path) -> Optional[Path]:
+        """Resolve a href to a local file, or None if remote/unsafe.
+
+        v0.11.0 hardening: only stylesheets inside the specimen's
+        directory tree are served. Absolute paths and ../ escapes are
+        rejected.
+        """
         parsed = urlparse(href)
         if parsed.scheme in ("http", "https", "data", "javascript"):
             return None
@@ -411,9 +417,15 @@ class HtmlCssSelectorsExtractor:
             candidate = base_dir / candidate
         try:
             candidate = candidate.resolve()
+            base_root = base_dir.resolve()
         except Exception:
             return None
         if not candidate.is_file():
+            return None
+        try:
+            if not candidate.is_relative_to(base_root):
+                return None
+        except Exception:
             return None
         return candidate
 
