@@ -463,6 +463,63 @@ def render_pdf_report_html(
 # Public entry point
 # ----------------------------------------------------------------------
 
+_XMP_FIXED = b"xmp.did:00000000-0000-0000-0000-000000000000"
+
+
+def _pdf_pin_xmp(data):
+    """Replace volatile xmp.did UUIDs (weasyprint metadata.py: uuid4)
+    with a fixed value. Return new bytes, or None if unchanged."""
+    if not isinstance(data, bytes) or b"xmp.did:" not in data:
+        return None
+    out = bytearray(data)
+    pos = 0
+    while True:
+        start = out.find(b"xmp.did:", pos)
+        if start == -1:
+            break
+        end = out.find(b"<", start)
+        if end == -1:
+            end = len(out)
+        out[start:end] = _XMP_FIXED
+        pos = start + len(_XMP_FIXED)
+    return bytes(out)
+
+
+def _pdf_determinize_font(data):
+    """Zero volatile fields of an embedded sfnt (TrueType/OpenType) font:
+    head.checkSumAdjustment and head.created / head.modified. fontTools
+    rewrites head.modified with the current time on save (recalcTimestamp),
+    and the head directory checksum follows from it - CI-verified (differing
+    byte inside the head table directory entry) as the last nondeterminism
+    source of the PDF report. Return new bytes, or None if not a font."""
+    if not isinstance(data, bytes) or len(data) < 16:
+        return None
+    if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true"):
+        return None
+    out = bytearray(data)
+    num_tables = int.from_bytes(out[4:6], "big")
+    if num_tables == 0 or 12 + num_tables * 16 > len(out):
+        return None
+    for i in range(num_tables):
+        rec = 12 + i * 16
+        if bytes(out[rec:rec + 4]) != b"head":
+            continue
+        off = int.from_bytes(out[rec + 8:rec + 12], "big")
+        length = int.from_bytes(out[rec + 12:rec + 16], "big")
+        if length < 32 or off + length > len(out):
+            return None
+        out[off + 8:off + 12] = b"\x00" * 4      # checkSumAdjustment
+        out[off + 16:off + 32] = b"\x00" * 16    # created + modified
+        table = bytes(out[off:off + length])
+        padded = table + b"\x00" * (-len(table) % 4)
+        checksum = 0
+        for k in range(0, len(padded), 4):
+            checksum = (checksum + int.from_bytes(padded[k:k + 4], "big")) & 0xFFFFFFFF
+        out[rec + 4:rec + 8] = checksum.to_bytes(4, "big")
+        return bytes(out)
+    return None
+
+
 def build_pdf_report(
     input_dir: Path,
     output_path: Path,
@@ -541,24 +598,21 @@ def build_pdf_report(
         #   2. /ID     -> not written (pydyf identifier defaults to False);
         #   3. xmp.did -> uuid4() in the XMP DocumentID is rewritten to a
         #      fixed value by this finisher (weasyprint metadata.py:129).
-        def _pin_xmp_uuid(document, pdf):
-            fixed = b"xmp.did:00000000-0000-0000-0000-000000000000"
-
+        def _determinize(document_arg, pdf_arg):
             def rewrite(data):
-                if not isinstance(data, bytes) or b"xmp.did:" not in data:
+                if not isinstance(data, bytes):
                     return None
-                out = bytearray(data)
-                pos = 0
-                while True:
-                    start = out.find(b"xmp.did:", pos)
-                    if start == -1:
-                        break
-                    end = out.find(b"<", start)
-                    if end == -1:
-                        end = len(out)
-                    out[start:end] = fixed
-                    pos = start + len(fixed)
-                return bytes(out)
+                result = data
+                changed = False
+                fixed = _pdf_determinize_font(result)
+                if fixed is not None:
+                    result = fixed
+                    changed = True
+                fixed = _pdf_pin_xmp(result)
+                if fixed is not None:
+                    result = fixed
+                    changed = True
+                return result if changed else None
 
             def walk(container):
                 # Structure-agnostic: recurse dicts/lists in place.
@@ -578,7 +632,7 @@ def build_pdf_report(
                         else:
                             walk(value)
 
-            walk(pdf.objects)
+            walk(pdf_arg.objects)
 
         doc.write_pdf(
             target=str(output_path),
@@ -589,7 +643,7 @@ def build_pdf_report(
             # same font). Disabling stream compression removes the last
             # nondeterminism source; the xmp.did pin stays via finisher.
             uncompressed_pdf=True,
-            finisher=_pin_xmp_uuid,
+            finisher=_determinize,
         )
 
     return output_path
