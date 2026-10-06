@@ -536,21 +536,30 @@ def build_pdf_report(
 
         # WeasyPrint: build PDF. Fixed metadata for determinism.
         doc = HTML(string=html_text, base_url=str(input_dir))
-        # Byte determinism (verified against pydyf 0.12):
-        #   - dates are pinned via dcterms meta tags in the template;
-        #   - /ID is pinned via a finisher (weasyprint only writes /ID
-        #     when identifier=True; a finisher lets us set it explicitly).
-        def _pin_identifier(document, pdf):
-            pdf.extra["ID"] = (
-                b"<0123456789ABCDEF0123456789ABCDEF>"
-                b"<0123456789ABCDEF0123456789ABCDEF>"
-            )
+        # Byte determinism (all three non-determinism sources addressed):
+        #   1. dates   -> pinned by dcterms.created/modified meta tags;
+        #   2. /ID     -> not written (pydyf identifier defaults to False);
+        #   3. xmp.did -> uuid4() in the XMP DocumentID is rewritten to a
+        #      fixed value by this finisher (weasyprint metadata.py:129).
+        def _pin_xmp_uuid(document, pdf):
+            fixed = b"xmp.did:sieve-lens-0.11.0"
+            for obj in pdf.objects:
+                try:
+                    data = obj[3]
+                except (IndexError, TypeError):
+                    continue
+                if isinstance(data, bytes) and b"xmp.did:" in data:
+                    start = data.find(b"xmp.did:")
+                    end = data.find(b"<", start)
+                    if end == -1:
+                        end = len(data)
+                    data[start:end] = fixed
 
         doc.write_pdf(
             target=str(output_path),
             presentational_hints=False,
             optimize_images=True,
-            finisher=_pin_identifier,
+            finisher=_pin_xmp_uuid,
         )
 
     return output_path
