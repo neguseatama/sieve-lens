@@ -39,9 +39,23 @@ class TestPdfReportDeterminism(unittest.TestCase):
             build_pdf_report(
                 input_dir=base, output_path=o2, include_charts=False
             )
+            b1 = o1.read_bytes()
+            b2 = o2.read_bytes()
+            if b1 != b2:
+                diff = next(
+                    (k for k, (x, y) in enumerate(zip(b1, b2)) if x != y),
+                    min(len(b1), len(b2)),
+                )
+                lo = max(0, diff - 80)
+                self.fail(
+                    f"PDFs differ at byte {diff} "
+                    f"(len {len(b1)} vs {len(b2)})\n"
+                    f"r1: {b1[lo:diff + 80]!r}\n"
+                    f"r2: {b2[lo:diff + 80]!r}"
+                )
             self.assertEqual(
-                hashlib.sha256(o1.read_bytes()).hexdigest(),
-                hashlib.sha256(o2.read_bytes()).hexdigest(),
+                hashlib.sha256(b1).hexdigest(),
+                hashlib.sha256(b2).hexdigest(),
             )
 
 

@@ -23,9 +23,9 @@
 - **security**: dashboard and PDF report enable Jinja2 autoescape — content
   from untrusted documents (e.g. comments carrying event handlers) can no
   longer inject HTML/JS into reports; `input_dir` double-escaping removed.
-- **pdf_report**: fixed `dcterms.created`/`dcterms.modified` meta tags make
-  the PDF byte-deterministic (weasyprint previously embedded the current
-  time, contradicting the "no timestamps" statement).
+- **pdf_report**: fixed `dcterms.created`/`dcterms.modified` meta tags and a fixed PDF /ID (via a write_pdf finisher) make the PDF
+  byte-deterministic (weasyprint previously embedded the current time,
+  contradicting the "no timestamps" statement).
 - **pdf_report/tests**: weasyprint's import guard now catches `OSError`
   (missing pango raises OSError, not ImportError — tests crashed at
   collection on such systems).

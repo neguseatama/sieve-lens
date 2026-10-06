@@ -536,10 +536,21 @@ def build_pdf_report(
 
         # WeasyPrint: build PDF. Fixed metadata for determinism.
         doc = HTML(string=html_text, base_url=str(input_dir))
+        # Byte determinism (verified against pydyf 0.12):
+        #   - dates are pinned via dcterms meta tags in the template;
+        #   - /ID is pinned via a finisher (weasyprint only writes /ID
+        #     when identifier=True; a finisher lets us set it explicitly).
+        def _pin_identifier(pdf):
+            pdf.extra["ID"] = (
+                b"<0123456789ABCDEF0123456789ABCDEF>"
+                b"<0123456789ABCDEF0123456789ABCDEF>"
+            )
+
         doc.write_pdf(
             target=str(output_path),
             presentational_hints=False,
             optimize_images=True,
+            finisher=_pin_identifier,
         )
 
     return output_path
