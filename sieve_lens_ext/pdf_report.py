@@ -542,18 +542,43 @@ def build_pdf_report(
         #   3. xmp.did -> uuid4() in the XMP DocumentID is rewritten to a
         #      fixed value by this finisher (weasyprint metadata.py:129).
         def _pin_xmp_uuid(document, pdf):
-            fixed = b"xmp.did:sieve-lens-0.11.0"
-            for obj in pdf.objects:
-                try:
-                    data = obj[3]
-                except (IndexError, TypeError):
-                    continue
-                if isinstance(data, bytes) and b"xmp.did:" in data:
-                    start = data.find(b"xmp.did:")
-                    end = data.find(b"<", start)
+            fixed = b"xmp.did:00000000-0000-0000-0000-000000000000"
+
+            def rewrite(data):
+                if not isinstance(data, bytes) or b"xmp.did:" not in data:
+                    return None
+                out = bytearray(data)
+                pos = 0
+                while True:
+                    start = out.find(b"xmp.did:", pos)
+                    if start == -1:
+                        break
+                    end = out.find(b"<", start)
                     if end == -1:
-                        end = len(data)
-                    data[start:end] = fixed
+                        end = len(out)
+                    out[start:end] = fixed
+                    pos = start + len(fixed)
+                return bytes(out)
+
+            def walk(container):
+                # Structure-agnostic: recurse dicts/lists in place.
+                # No indexing, no key assumptions - cannot raise.
+                if isinstance(container, dict):
+                    for key, value in list(container.items()):
+                        new = rewrite(value)
+                        if new is not None:
+                            container[key] = new
+                        else:
+                            walk(value)
+                elif isinstance(container, list):
+                    for i, value in enumerate(container):
+                        new = rewrite(value)
+                        if new is not None:
+                            container[i] = new
+                        else:
+                            walk(value)
+
+            walk(pdf.objects)
 
         doc.write_pdf(
             target=str(output_path),
