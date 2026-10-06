@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.11.0] - 2026-10-06
+
+### Fixed (verified end-to-end)
+- **pdf_images**: `extract()` called an undefined `_get_page_images()` and the
+  combined extractor silently swallowed the error — v0.10.0 PDF embedded image
+  analysis never worked. Implemented via pypdf's `page.images`; the loader now
+  prefers pypdf's decoder (which composites /SMask into alpha and preserves
+  the RGB of invisible pixels); text-extraction failures now propagate (H1=0)
+  instead of being silenced.
+- **html_css_selectors (v0.8)**: document body text was never emitted,
+  disabling H2/H3/H6/H7 detection for HTML entirely. Body text is now emitted
+  with ancestor hidden-state inheritance; selector evidence reports the real
+  match count.
+- **ocr**: the EXIF SubIFD (IFD 0x8769) is now scanned — UserComment
+  (tag 37510), the primary metadata injection point, was previously never read.
+- **core (HTML)**: hidden state now inherits from ancestors; the bare
+  `hidden` attribute is detected; void elements no longer leak hidden state
+  to following text nodes.
+- **core**: Variation Selectors Supplement (U+E0100–E01EF) added to the
+  INVISIBLE set (H2/H7).
+- **security**: dashboard and PDF report enable Jinja2 autoescape — content
+  from untrusted documents (e.g. comments carrying event handlers) can no
+  longer inject HTML/JS into reports; `input_dir` double-escaping removed.
+- **pdf_report**: fixed `dcterms.created`/`dcterms.modified` meta tags make
+  the PDF byte-deterministic (weasyprint previously embedded the current
+  time, contradicting the "no timestamps" statement).
+- **pdf_report/tests**: weasyprint's import guard now catches `OSError`
+  (missing pango raises OSError, not ImportError — tests crashed at
+  collection on such systems).
+- **ocr tests**: skip when the tesseract *binary* is absent (previously
+  failed on systems with the pytesseract package but no binary).
+- **html_css (v0.4)**: symmetric push/pop for style/script tags; multiple
+  `<style>` blocks and multiple `<link rel=stylesheet>` hrefs are all
+  processed; `display:none !important` is no longer skipped; P2 semantics
+  (inheritance, void elements, bare `hidden`) applied; the
+  `resolve_local_links` argument of `install()` is now honored.
+
+### Added
+- `SieveLensEngine.get_extractor()` — public accessor enabling chained
+  extension installs; `sieve_lens_ext.image_layers.install()` now chains
+  onto the existing image extractor (honoring the "install both to
+  combine" contract) instead of replacing it.
+- dashboard `_build_engine` now installs all extensions (v0.7 image layers,
+  v0.8 full selectors, v0.10 pdf images become active in batch tools).
+
+### Changed
+- i18n: hypothesis chart labels follow the report language; the PDF report
+  footer prints the real package version instead of a hardcoded 0.9.0;
+  the duplicate i18n `__version__` was removed.
+- image_layers: transparent-layer and histogram analysis are C-accelerated
+  via Pillow channel ops (large images no longer require pure-Python
+  O(W×H) loops); palette transparency (GIF / indexed PNG tRNS) is now
+  recognized.
+
+### Docs
+- `_LOW_CONTRAST_MIN_UNIQUE` documented as informational (not enforced).
+
 ## [0.10.0] - 2026-09-24
 
 ### Added
