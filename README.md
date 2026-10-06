@@ -1,6 +1,19 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.10.0
+# Sieve Lens v0.11.0
+
+## v0.11.0 Highlights
+
+- **Fixed critical regressions**: PDF embedded-image analysis and HTML body
+  text extraction (which had silently disabled H2/H3/H6/H7 detection), and
+  EXIF UserComment/SubIFD reading.
+- **Security**: report output is now HTML-escaped (untrusted specimens can no
+  longer inject markup into dashboards/PDF reports), and local stylesheet
+  resolution is confined to the specimen's directory tree.
+- **Deterministic PDF reports**: byte-identical output across builds,
+  verified in CI (fixed dcterms dates + pinned XMP DocumentID).
+- **Chained extensions**: `sieve_lens_ext.image_layers` now composes with
+  `sieve_lens_ext.ocr` automatically; new `SieveLensEngine.get_extractor()`.
 
 **Invisible Prompt Observation Engine**
 

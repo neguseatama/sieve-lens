@@ -1,6 +1,19 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.10.0
+# Sieve Lens v0.11.0
+
+## v0.11.0 ハイライト
+
+- **重大な不具合を修正**: PDF 埋め込み画像解析・HTML 本文抽出（H2/H3/H6/H7 の
+  検出が無効化されていました）・EXIF UserComment/SubIFD の読み取り。
+- **セキュリティ**: レポート出力を HTML エスケープ（悪意ある検体が
+  ダッシュボード/PDF レポートへマークアップを注入できなくなりました）。
+  ローカル stylesheet の解決を検体ディレクトリ配下に制限。
+- **決定論的 PDF レポート**: ビルド間でバイト一致することを CI で実証
+  （dcterms 日時の固定＋XMP DocumentID の固定）。
+- **拡張のチェーン化**: `sieve_lens_ext.image_layers` が
+  `sieve_lens_ext.ocr` と自動的に合成されるように。新 API
+  `SieveLensEngine.get_extractor()` を追加。
 
 **不可視プロンプト観測エンジン**
 
