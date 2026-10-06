@@ -540,7 +540,7 @@ def build_pdf_report(
         #   - dates are pinned via dcterms meta tags in the template;
         #   - /ID is pinned via a finisher (weasyprint only writes /ID
         #     when identifier=True; a finisher lets us set it explicitly).
-        def _pin_identifier(pdf):
+        def _pin_identifier(document, pdf):
             pdf.extra["ID"] = (
                 b"<0123456789ABCDEF0123456789ABCDEF>"
                 b"<0123456789ABCDEF0123456789ABCDEF>"
