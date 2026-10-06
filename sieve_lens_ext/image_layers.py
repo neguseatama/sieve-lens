@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageChops
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -53,7 +53,7 @@ class ImageLayersExtractor:
 
     # Low-contrast detection thresholds
     _LOW_CONTRAST_RATIO_THRESHOLD = 2.0   # WCAG-based, <2.0 is "failing"
-    _LOW_CONTRAST_MIN_UNIQUE = 8          # ignore nearly-flat images
+    _LOW_CONTRAST_MIN_UNIQUE = 8          # informational (not enforced, P12)
     _LOW_CONTRAST_MIN_REGION = 0.01       # ≥1% of pixels in the dark cluster
 
     def extract(self, path: Path) -> List[Segment]:
@@ -73,7 +73,14 @@ class ImageLayersExtractor:
     # ------------------------------------------------------------------
 
     def _detect_transparent_layer(self, img) -> List[Segment]:
-        if img.mode not in ("RGBA", "LA", "PA"):
+        # v0.11.0 (P12): C-accelerated via channel ops + histogram.
+        # Also recognizes palette transparency ("transparency" in info),
+        # covering GIF / indexed PNG in addition to RGBA/LA/PA modes.
+        has_alpha = (
+            img.mode in ("RGBA", "LA", "PA")
+            or "transparency" in (img.info or {})
+        )
+        if not has_alpha:
             return []
 
         rgba = img.convert("RGBA")
@@ -82,23 +89,26 @@ class ImageLayersExtractor:
         if total == 0:
             return []
 
-        pixels = rgba.load()
+        # Mask: alpha == 0
+        a0 = rgba.getchannel("A").point(lambda v: 255 if v == 0 else 0)
+        # Mask: any non-zero RGB
+        rgb_max = ImageChops.lighter(
+            ImageChops.lighter(rgba.getchannel("R"), rgba.getchannel("G")),
+            rgba.getchannel("B"),
+        )
+        nz = rgb_max.point(lambda v: 255 if v > 0 else 0)
+        invisible = ImageChops.multiply(a0, nz)
 
-        # Count pixels with alpha=0 and non-zero RGB (invisible text).
-        invisible_count = 0
-        first_hit: Optional[Tuple[int, int]] = None
-        for y in range(height):
-            for x in range(width):
-                r, g, b, a = pixels[x, y]
-                if a == 0 and (r != 0 or g != 0 or b != 0):
-                    invisible_count += 1
-                    if first_hit is None:
-                        first_hit = (x, y)
+        histogram = invisible.histogram()
+        invisible_count = histogram[255] if len(histogram) > 255 else 0
 
         if invisible_count < self._TRANSPARENT_MIN_COUNT:
             return []
         if (invisible_count / total) < self._TRANSPARENT_MIN_RATIO:
             return []
+
+        bbox = invisible.getbbox()
+        first = f"first hit at ({bbox[0]}, {bbox[1]})" if bbox else "first hit unknown"
 
         ratio_pct = round((invisible_count / total) * 100, 2)
         return [Segment(
@@ -108,7 +118,7 @@ class ImageLayersExtractor:
             ),
             visible=False,
             kind="css_hidden",
-            location=f"first hit at ({first_hit[0]}, {first_hit[1]})",
+            location=first,
         )]
 
     # ------------------------------------------------------------------
@@ -126,13 +136,8 @@ class ImageLayersExtractor:
         if total == 0:
             return []
 
-        pixels = gray.load()
-
-        # Histogram
-        histogram = [0] * 256
-        for y in range(height):
-            for x in range(width):
-                histogram[pixels[x, y]] += 1
+        # Histogram (C-accelerated via Pillow, P12)
+        histogram = gray.histogram()
 
         # Find the mode (background)
         mode_value = max(range(256), key=lambda v: histogram[v])
