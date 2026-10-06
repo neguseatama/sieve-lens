@@ -506,10 +506,15 @@ def _pdf_determinize_font(data):
             continue
         off = int.from_bytes(out[rec + 8:rec + 12], "big")
         length = int.from_bytes(out[rec + 12:rec + 16], "big")
-        if length < 32 or off + length > len(out):
+        if length < 36 or off + length > len(out):
             return None
         out[off + 8:off + 12] = b"\x00" * 4      # checkSumAdjustment
-        out[off + 16:off + 32] = b"\x00" * 16    # created + modified
+        # head layout: 20-28 created, 28-36 modified (longDateTime).
+        # fontTools (recalcTimestamp) rewrites modified with now(); the
+        # CI byte-diff showed the recomputed head checksum differing by
+        # exactly the 1-second timestamp delta. Zero BOTH fields, and
+        # keep flags/unitsPerEm (16-20) intact.
+        out[off + 20:off + 36] = b"\x00" * 16    # created + modified
         table = bytes(out[off:off + length])
         padded = table + b"\x00" * (-len(table) % 4)
         checksum = 0
