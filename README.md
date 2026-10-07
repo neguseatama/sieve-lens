@@ -155,7 +155,7 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 ## 🔗 Redact Bridge (v0.12.0)
 
 `sieve_lens_ext.redact_bridge` exports an observation catalog that
-[Sieve Redact](https://github.com/) consumes directly:
+[Sieve Redact](https://github.com/neguseatama/sieve-redact) consumes directly:
 
     python -m sieve_lens_ext.redact_bridge input.txt catalog.json
     python -m sieve_redact input.txt -o clean.txt --from-lens catalog.json
