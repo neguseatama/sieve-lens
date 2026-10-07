@@ -30,3 +30,6 @@ Thumbs.db
 reports/
 *.observation.txt
 AGENTS.md
+
+# local process scripts (kept out of the repository)
+lens_apply_*.sh
