@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.11.0
+# Sieve Lens v0.12.0
 
 ## 💡 Concept
 
@@ -151,6 +151,24 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
+
+## 🔗 Redact Bridge (v0.12.0)
+
+`sieve_lens_ext.redact_bridge` exports an observation catalog that
+[Sieve Redact](https://github.com/) consumes directly:
+
+    python -m sieve_lens_ext.redact_bridge input.txt catalog.json
+    python -m sieve_redact input.txt -o clean.txt --from-lens catalog.json
+
+- Catalog format (version 1): `observations[]` with `kind`, `codepoint`,
+  `count`, `positions` (first-seen order).
+- Look-alike letters (Cyrillic/Greek -> Latin, 40 entries) carry an optional
+  `twin` field, which Redact converts into a replacement rule; invisible
+  characters become deletions.
+- Deterministic, stdlib-only. The bridge imports the core character tables,
+  so the two engines can never disagree on what counts as invisible.
+- End-to-end check: `python3 probe_redact_roundtrip.py`
+  (synthetic input -> catalog -> redact -> re-observe clean).
 
 ## v0.11.0 Highlights
 

@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.11.0
+# Sieve Lens v0.12.0
 
 ## 💡 コンセプト
 
@@ -150,6 +150,24 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
+
+## 🔗 Redact Bridge(v0.12.0)
+
+`sieve_lens_ext.redact_bridge` が観測目録(JSON)を出力し、Sieve Redact が
+そのまま消費します:
+
+    python -m sieve_lens_ext.redact_bridge input.txt catalog.json
+    python -m sieve_redact input.txt -o clean.txt --from-lens catalog.json
+
+- 目録形式(version 1): `observations[]` に `kind` / `codepoint` / `count` /
+  `positions`(初出順)。
+- 同形文字(キリル/ギリシャ → ラテン、40 語)は省略可能な `twin` フィールド
+  つきで報告され、Redact が置換ルールに変換。不可視文字は削除ルールに
+  なります。
+- 決定的・stdlib のみ。コアの文字表を import するため、2 エンジンで
+  「何が不可視か」の定義がずれません。
+- 統合確認: `python3 probe_redact_roundtrip.py`
+  (合成入力 → 目録 → Redact → 再観測でクリーン)。
 
 ## v0.11.0 ハイライト
 

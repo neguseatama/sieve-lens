@@ -1,3 +1,24 @@
+## [0.12.0] - 2026-10-08
+
+### Added
+- **redact_bridge** (`sieve_lens_ext/redact_bridge.py`): deterministic,
+  stdlib-only catalog exporter for Sieve Redact's `--from-lens`. Emits the
+  v1 catalog format (`lens` / `version` / `observations[]` with `kind`,
+  `codepoint`, `count`, `positions`) plus an optional `twin` field for
+  look-alike letters (Cyrillic/Greek -> Latin, 40 entries). Redact turns
+  twins into replacement rules and invisible characters into deletions.
+  Imports the core character tables (ZERO_WIDTH / BIDI_CONTROL / INVISIBLE /
+  strip_leading_bom) so the bridge can never diverge from the engine.
+  CLI: `python -m sieve_lens_ext.redact_bridge IN.txt OUT.json`.
+- `probe_redact_roundtrip.py`: end-to-end probe (synthetic input -> catalog
+  -> Redact --from-lens -> engine re-observe: H2/H3/H7 = 0).
+- 10 new tests (`tests/test_redact_bridge.py`): 144 passed / 11 skipped
+  locally.
+
+### Changed
+- Repository hygiene: the local virtualenv and audit artifacts are no longer
+  tracked.
+
 # Changelog
 
 ## [0.11.0] - 2026-10-06
