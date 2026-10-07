@@ -14,6 +14,7 @@ build/
 htmlcov/
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
@@ -29,7 +30,3 @@ Thumbs.db
 # Sieve Lens generated reports
 reports/
 *.observation.txt
-AGENTS.md
-
-# local process scripts (kept out of the repository)
-lens_apply_*.sh
