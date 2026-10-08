@@ -162,7 +162,8 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 - Catalog format (version 1): `observations[]` with `kind`, `codepoint`,
   `count`, `positions` (first-seen order).
-- Look-alike letters (Cyrillic/Greek -> Latin, 40 entries) carry an optional
+- Look-alike characters (Cyrillic/Greek -> Latin, full-width digits
+  and letters -> ASCII, 102 entries) carry an optional
   `twin` field, which Redact converts into a replacement rule; invisible
   characters become deletions.
 - Deterministic, stdlib-only. The bridge imports the core character tables,
@@ -212,6 +213,8 @@ domain of **machine-readable vs. human-visible divergence**.
    updating the tables.
 5. **This is an observation engine, not a detector.** Findings should always
    be confirmed by human review.
+6. **Homoglyph twins are non-ASCII -> ASCII only** — lookalike pairs
+   inside ASCII (O/0, l/1) and CJK lookalikes are out of scope
 
 ---
 

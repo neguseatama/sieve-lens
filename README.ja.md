@@ -161,7 +161,8 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 - 目録形式(version 1): `observations[]` に `kind` / `codepoint` / `count` /
   `positions`(初出順)。
-- 同形文字(キリル/ギリシャ → ラテン、40 語)は省略可能な `twin` フィールド
+- 同形文字(キリル/ギリシャ → ラテン、全角数字・英字 → ASCII、
+  102 語)は省略可能な `twin` フィールド
   つきで報告され、Redact が置換ルールに変換。不可視文字は削除ルールに
   なります。
 - 決定的・stdlib のみ。コアの文字表を import するため、2 エンジンで
@@ -206,6 +207,8 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 3. **インライン CSS のみ検査**（外部スタイルシート未解決）
 4. **符号表は固定**（新しい不可視手法には表の拡張が必要）
 5. **これは観測エンジンであり、検出器ではない**（人間による確認が前提）
+6. **同形 twin は非 ASCII → ASCII のみ** — O/0・l/1 のような ASCII 内部の
+   類似や CJK 類似は対象外（非 ASCII キー → ASCII twin の単純構造を維持）
 
 ---
 
