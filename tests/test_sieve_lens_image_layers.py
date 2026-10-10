@@ -124,5 +124,62 @@ class TestImageLayersExtension(unittest.TestCase):
             self.assertEqual(r.h_states, results[0].h_states)
 
 
+# --- minimum unique gray levels for low-contrast detection (v0.14) ---
+
+@unittest.skipUnless(PIL_AVAILABLE, "Pillow not installed")
+class TestLowContrastMinUnique(unittest.TestCase):
+    """Low-contrast H4 requires enough distinct non-background gray levels.
+
+    test_single_color_aa_text_still_triggers pins current behavior:
+    anti-aliased glyph edges add intermediate gray levels, so a
+    single-fill-color hidden text still fires. It must stay green
+    after the gate is enforced.
+    """
+
+    def setUp(self):
+        self.engine = SieveLensEngine()
+        install(self.engine)
+        self._tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _path(self, name):
+        return Path(self._tmpdir.name) / name
+
+    def test_solid_low_contrast_blob_not_triggered(self):
+        # Uniform near-white rectangle: 1 distinct non-background level.
+        p = self._path("blob.png")
+        img = Image.new("RGB", (400, 200), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(100, 50), (300, 150)], fill=(250, 250, 250))
+        img.save(p)
+        obs = self.engine.observe(p)
+        self.assertEqual(obs.h_states["H4"], 0)
+
+    def test_two_level_region_not_triggered(self):
+        # Two solid gray levels only: below the minimum unique count.
+        p = self._path("two_level.png")
+        img = Image.new("RGB", (400, 200), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(50, 40), (200, 160)], fill=(240, 240, 240))
+        draw.rectangle([(220, 40), (370, 160)], fill=(230, 230, 230))
+        img.save(p)
+        obs = self.engine.observe(p)
+        self.assertEqual(obs.h_states["H4"], 0)
+
+    def test_single_color_aa_text_still_triggers(self):
+        # Single fill color, but anti-aliased edges add many intermediate
+        # levels (measured 15 >= 8): still a valid H4 signal.
+        p = self._path("aa_text.png")
+        img = Image.new("RGB", (120, 60), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 15), "HIDDEN", fill=(220, 220, 220))
+        draw.text((10, 35), "HIDDEN", fill=(220, 220, 220))
+        img.save(p)
+        obs = self.engine.observe(p)
+        self.assertEqual(obs.h_states["H4"], 1)
+        self.assertTrue(any("low contrast" in e for e in obs.evidence["H4"]))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

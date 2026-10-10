@@ -53,7 +53,7 @@ class ImageLayersExtractor:
 
     # Low-contrast detection thresholds
     _LOW_CONTRAST_RATIO_THRESHOLD = 2.0   # WCAG-based, <2.0 is "failing"
-    _LOW_CONTRAST_MIN_UNIQUE = 8          # informational (not enforced, P12)
+    _LOW_CONTRAST_MIN_UNIQUE = 8          # min distinct non-background gray levels required to fire H4
     _LOW_CONTRAST_MIN_REGION = 0.01       # ≥1% of pixels in the dark cluster
 
     def extract(self, path: Path) -> List[Segment]:
@@ -73,7 +73,7 @@ class ImageLayersExtractor:
     # ------------------------------------------------------------------
 
     def _detect_transparent_layer(self, img) -> List[Segment]:
-        # v0.11.0 (P12): C-accelerated via channel ops + histogram.
+        # v0.11.0: C-accelerated via channel ops + histogram.
         # Also recognizes palette transparency ("transparency" in info),
         # covering GIF / indexed PNG in addition to RGBA/LA/PA modes.
         has_alpha = (
@@ -136,7 +136,7 @@ class ImageLayersExtractor:
         if total == 0:
             return []
 
-        # Histogram (C-accelerated via Pillow, P12)
+        # Histogram (C-accelerated via Pillow)
         histogram = gray.histogram()
 
         # Find the mode (background)
@@ -151,10 +151,13 @@ class ImageLayersExtractor:
         MIN_GAP = 5
         non_bg_count = 0
         non_bg_weighted_sum = 0
+        unique_non_bg = 0
         for v in range(256):
             if abs(v - mode_value) < MIN_GAP:
                 continue
             c = histogram[v]
+            if c > 0:
+                unique_non_bg += 1
             non_bg_count += c
             non_bg_weighted_sum += v * c
 
@@ -178,6 +181,9 @@ class ImageLayersExtractor:
         lum_fg = luminance(int(round(mean_non_bg)))
         contrast = (max(lum_bg, lum_fg) + 0.05) / (min(lum_bg, lum_fg) + 0.05)
 
+        if unique_non_bg < self._LOW_CONTRAST_MIN_UNIQUE:
+            return []
+
         if contrast >= self._LOW_CONTRAST_RATIO_THRESHOLD:
             return []
 
@@ -186,7 +192,8 @@ class ImageLayersExtractor:
                 f"low contrast: WCAG ratio {round(contrast, 2)}:1 "
                 f"(background={mode_value}, "
                 f"foreground_mean={round(mean_non_bg, 1)}, "
-                f"region_ratio={round(non_bg_ratio, 3)})"
+                f"region_ratio={round(non_bg_ratio, 3)}, "
+                f"region_unique={unique_non_bg})"
             ),
             visible=False,
             kind="css_hidden",
