@@ -197,6 +197,8 @@ class TestPdfImagesInternalLogic(unittest.TestCase):
         draw.rectangle([20, 20, 180, 180], fill=(240, 240, 240))
         draw.text((30, 30), "AAAA AAAA\nAAAA AAAA\nAAAA AAAA\nAAAA AAAA",
                   fill=(230, 230, 230))
+        draw.text((30, 90), "BBBB BBBB\nBBBB BBBB\nBBBB BBBB\nBBBB BBBB",
+                  fill=(225, 225, 225))
         mock = _MockImageFile(img)
 
         extractor = PdfImagesExtractor()
