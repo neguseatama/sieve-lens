@@ -192,8 +192,8 @@ class TestPdfImagesInternalLogic(unittest.TestCase):
         # gray levels from anti-aliased thin strokes) — mirrors the
         # realistic threat model of hidden low-contrast text inside an
         # embedded image, and passes the unique-level gate.
-        _ImageDraw = __import__("PIL.ImageDraw", fromlist=("ImageDraw",)).ImageDraw
-        draw = _ImageDraw.Draw(img)
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
         draw.rectangle([20, 20, 180, 180], fill=(240, 240, 240))
         draw.text((30, 30), "AAAA AAAA\nAAAA AAAA\nAAAA AAAA\nAAAA AAAA",
                   fill=(230, 230, 230))
