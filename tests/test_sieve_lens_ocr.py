@@ -135,5 +135,120 @@ class TestOcrExtensionOcrText(unittest.TestCase):
             self.assertEqual(r.h_states, results[0].h_states)
 
 
+# --- OCR lang parameter wiring (v0.14) ---
+
+from unittest.mock import patch
+
+from sieve_lens_ext.ocr import ImageOcrExtractor
+
+_JPN_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "ocr_jpn_sample.png"
+
+
+class _RecordingFake:
+    """Callable fake for pytesseract.image_to_string; records lang kwargs."""
+
+    def __init__(self, result=""):
+        self.result = result
+        self.calls = []
+
+    def __call__(self, img, *args, **kwargs):
+        self.calls.append(kwargs.get("lang"))
+        return self.result
+
+
+@unittest.skipUnless(
+    PIL_AVAILABLE and PYTESSERACT_AVAILABLE,
+    "Pillow or pytesseract not installed",
+)
+class TestOcrLangWiring(unittest.TestCase):
+    """ocr_lang flows through install()/constructor into pytesseract.
+
+    image_to_string is replaced by a recording fake, so the tesseract
+    binary is not required for these tests.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _observe_with_fake(self, engine, fake_result=""):
+        fake = _RecordingFake(fake_result)
+        p = Path(self._tmpdir.name) / "wiring.png"
+        _make_image(p, text="")
+        with patch("sieve_lens_ext.ocr.pytesseract.image_to_string", new=fake):
+            obs = engine.observe(p)
+        return obs, fake
+
+    def test_default_lang_is_eng(self):
+        engine = SieveLensEngine()
+        install(engine)
+        obs, fake = self._observe_with_fake(engine, fake_result="hello")
+        self.assertEqual(fake.calls, ["eng"])
+
+    def test_lang_propagates_to_pytesseract(self):
+        engine = SieveLensEngine()
+        install(engine, ocr_lang="eng+jpn")
+        obs, fake = self._observe_with_fake(engine, fake_result="hello")
+        self.assertEqual(fake.calls, ["eng+jpn"])
+
+    def test_location_reflects_lang(self):
+        engine = SieveLensEngine()
+        install(engine, ocr_lang="eng+jpn")
+        obs, fake = self._observe_with_fake(engine, fake_result="hello")
+        body = [s for s in obs.segments if s.kind == "body"]
+        self.assertEqual(len(body), 1)
+        self.assertTrue(body[0].visible)
+        self.assertEqual(body[0].location, "OCR (lang=eng+jpn)")
+
+    def test_constructor_default_and_override(self):
+        self.assertEqual(ImageOcrExtractor()._OCR_LANG, "eng")
+        self.assertEqual(ImageOcrExtractor(ocr_lang="jpn")._OCR_LANG, "jpn")
+
+    def test_invalid_lang_raises_at_install(self):
+        engine = SieveLensEngine()
+        for bad in ("eng;rm -rf", "", "+eng", "eng+", "eng jpn"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    install(engine, ocr_lang=bad)
+
+
+@unittest.skipUnless(
+    PIL_AVAILABLE and PYTESSERACT_AVAILABLE,
+    "Pillow or pytesseract not installed",
+)
+@unittest.skipUnless(
+    __import__("shutil").which("tesseract"),
+    "tesseract binary not installed",
+)
+@unittest.skipUnless(_JPN_FIXTURE.exists(), "jpn fixture not present")
+class TestOcrLangJpnIntegration(unittest.TestCase):
+    """OCR of the committed Japanese fixture (needs jpn language pack).
+
+    Runs only where tesseract + the jpn pack exist. Locally (no binary)
+    it skips at the binary check.
+    """
+
+    def test_jpn_fixture_produces_body_segment(self):
+        try:
+            langs = pytesseract.get_languages()
+        except Exception:
+            self.skipTest("could not list tesseract languages")
+        if not isinstance(langs, (list, tuple)) or "jpn" not in langs:
+            self.skipTest("jpn language pack not installed")
+        engine = SieveLensEngine()
+        install(engine, ocr_lang="eng+jpn")
+        obs = engine.observe(_JPN_FIXTURE)
+        body = [s for s in obs.segments if s.kind == "body"]
+        self.assertEqual(len(body), 1)
+        seg = body[0]
+        self.assertTrue(seg.visible)
+        self.assertEqual(seg.location, "OCR (lang=eng+jpn)")
+        self.assertTrue(
+            any("\u4e00" <= ch <= "\u9fff" for ch in seg.text),
+            "OCR text contains no CJK: %r" % seg.text,
+        )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

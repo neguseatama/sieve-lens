@@ -19,6 +19,10 @@ Requires:
   - Pillow >= 10.0            (pip install Pillow)
   - pytesseract >= 0.3.10     (pip install pytesseract)
   - tesseract binary          (system package: e.g. apt install tesseract-ocr)
+  - language packs            (system packages, e.g.
+                               apt install tesseract-ocr-jpn; default OCR
+                               lang is "eng", configurable via
+                               install(engine, ocr_lang="eng+jpn"))
 
 Usage:
     from sieve_lens import SieveLensEngine
@@ -31,6 +35,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -80,6 +85,19 @@ class ImageOcrExtractor:
 
     _OOB_MIN_LENGTH = 10
     _OCR_LANG = "eng"
+
+    _LANG_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+    def __init__(self, ocr_lang: str = "eng"):
+        if not isinstance(ocr_lang, str) or not ocr_lang:
+            raise ValueError("ocr_lang must be a non-empty string")
+        for token in ocr_lang.split("+"):
+            if not self._LANG_TOKEN_RE.match(token):
+                raise ValueError(
+                    "invalid ocr_lang: %r (expected tesseract language codes "
+                    "joined by '+', e.g. 'eng' or 'eng+jpn')" % (ocr_lang,)
+                )
+        self._OCR_LANG = ocr_lang
 
     def extract(self, path: Path) -> List[Segment]:
         if not PIL_AVAILABLE:
@@ -211,6 +229,15 @@ class ImageOcrExtractor:
         )]
 
 
-def install(engine) -> None:
-    """Attach image OCR support to a SieveLensEngine instance."""
-    engine.register_extractor(ImageOcrExtractor.EXTENSIONS, ImageOcrExtractor())
+def install(engine, ocr_lang: str = "eng") -> None:
+    """Attach image OCR support to a SieveLensEngine instance.
+
+    ocr_lang is passed through to pytesseract: tesseract language codes
+    joined by '+', e.g. "eng" or "eng+jpn". Malformed values raise
+    ValueError at install time. If a language pack is missing on the
+    system, OCR quietly yields no text (metadata extraction is
+    unaffected) because tesseract errors are absorbed by the extractor.
+    """
+    engine.register_extractor(
+        ImageOcrExtractor.EXTENSIONS, ImageOcrExtractor(ocr_lang=ocr_lang)
+    )
