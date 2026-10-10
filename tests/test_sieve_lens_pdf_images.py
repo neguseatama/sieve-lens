@@ -188,10 +188,15 @@ class TestPdfImagesInternalLogic(unittest.TestCase):
         from PIL import Image as _Image
 
         img = _Image.new("RGB", (200, 200), (255, 255, 255))
-        # Paint a large low-contrast rectangle
-        for y in range(20, 180):
-            for x in range(20, 180):
-                img.putpixel((x, y), (240, 240, 240))
+        # Large low-contrast region with text-like structure (multiple
+        # gray levels from anti-aliased thin strokes) — mirrors the
+        # realistic threat model of hidden low-contrast text inside an
+        # embedded image, and passes the unique-level gate.
+        _ImageDraw = __import__("PIL.ImageDraw", fromlist=("ImageDraw",)).ImageDraw
+        draw = _ImageDraw.Draw(img)
+        draw.rectangle([20, 20, 180, 180], fill=(240, 240, 240))
+        draw.text((30, 30), "AAAA AAAA\nAAAA AAAA\nAAAA AAAA\nAAAA AAAA",
+                  fill=(230, 230, 230))
         mock = _MockImageFile(img)
 
         extractor = PdfImagesExtractor()
