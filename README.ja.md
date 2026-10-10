@@ -64,7 +64,7 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 | `.html` / `.htm` | インライン style 属性および `<style>` ブロックの隠蔽検出、オプションで外部 CSS 解決 | なし（Core）；`tinycss2`（オプション） |
 | `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
 | `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3） | `pypdf`（オプション） |
-| `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ（オプション） |
+| `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ＋言語パック（オプション） |
 
 **非対応**：音声、動画
 
@@ -84,7 +84,8 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
   エンジンは証拠を提示するのみ。「攻撃である」とは宣言しない。
 - **自己完結型 HTML レポート**（v0.1 以降）
 - **PDF 対応**（`pypdf` 経由、v0.2 以降）
-- **画像 OCR 対応**（`Pillow` + `pytesseract` 経由、v0.3 以降）
+- **画像 OCR 対応**（`Pillow` + `pytesseract` 経由、v0.3 以降）  
+  OCR 言語は `install(engine, ocr_lang="eng+jpn")` で設定可能（既定は `eng`）
 - **インタラクティブ HTML ダッシュボード**（v0.5 以降）  
   ディレクトリ単位で一括観測し、サマリーカード・マスク分布・仮説発動チャート・
   ソート可能なファイル一覧を含む単一の自己完結型 HTML を生成します。
@@ -117,8 +118,14 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 # Core（ゼロ依存）
 pip install git+https://github.com/neguseatama/sieve-lens.git
 
-# PDF 対応込み
-pip install "git+https://github.com/neguseatama/sieve-lens.git#egg=sieve-lens[pdf]"
+# PyPI から（リリース済みバージョン向け）
+pip install "sieve-lens[pdf]"
+pip install "sieve-lens[ocr]"
+
+# または GitHub から最新を（PyPI 未反映の変更を含む場合あり）
+pip install "sieve-lens[pdf] @ git+https://github.com/neguseatama/sieve-lens.git"
+pip install "sieve-lens[ocr] @ git+https://github.com/neguseatama/sieve-lens.git"
+```
 
 ---
 
@@ -154,11 +161,25 @@ engine = SieveLensEngine()
 install(engine)                    # .pdf 対応を有効化
 obs = engine.observe("resume.pdf")
 print(obs.mask)
+```
+
+### 画像 OCR（`ocr` オプションが必要）
+
+```python
+from sieve_lens import SieveLensEngine
+from sieve_lens_ext.ocr import install
+
+engine = SieveLensEngine()
+install(engine, ocr_lang="eng+jpn")    # tesseract の言語パックを指定（既定は eng）
+obs = engine.observe("screenshot.png")
+print(obs.mask)
+```
 
 ---
 
 ## 🔬 テスト
 
+```bash
 # v0 テストスイート（26件）
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
@@ -167,6 +188,7 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
 # v0.2 PDF 拡張（7件、pypdf 必要）
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
+```
 
 ---
 
@@ -219,7 +241,7 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
 
-## ⚠️ 既知の限界（v0.1）
+## ⚠️ 既知の限界
 
 1. **PDF・画像は非対応**（意図的なスコープ判断）
 2. **意味的意図は評価しない**（可視だが細工された文は対象外）
@@ -228,6 +250,9 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 5. **これは観測エンジンであり、検出器ではない**（人間による確認が前提）
 6. **同形 twin は非 ASCII → ASCII のみ** — O/0・l/1 のような ASCII 内部の
    類似や CJK 類似は対象外（非 ASCII キー → ASCII twin の単純構造を維持）
+
+7. **OCR の言語パック未導入時は黙って空結果になる** — 例外は出ず、OCR テキストが
+   0 件になる（メタデータ抽出は無影響）
 
 ---
 

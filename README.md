@@ -65,7 +65,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 | `.html`, `.htm` | HTML with inline-style and `<style>` block concealment detection; optional external CSS resolution | none (core); `tinycss2` (optional) |
 | `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
 | `.pdf` | Body text, metadata, annotations, invisible text (Tr 3) | `pypdf` (optional) |
-| `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary (optional) |
+| `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary + language packs (optional) |
 
 **Not supported**: audio, video.
 
@@ -85,7 +85,8 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   The engine reports evidence. It never declares "this is an attack".
 - **Self-contained HTML report** (since v0.1)  
 - **PDF support** via `pypdf` (since v0.2)  
-- **Image OCR support** via `Pillow` + `pytesseract` (since v0.3)
+- **Image OCR support** via `Pillow` + `pytesseract` (since v0.3)  
+  OCR language is configurable: `install(engine, ocr_lang="eng+jpn")`
 - **Interactive HTML dashboard** (since v0.5)  
   Batch-analyze a directory and produce a single self-contained dashboard
   with summary cards, mask distribution, hypothesis activation charts,
@@ -118,8 +119,14 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 # Core (zero-dependency)
 pip install git+https://github.com/neguseatama/sieve-lens.git
 
-# With PDF support
-pip install "git+https://github.com/neguseatama/sieve-lens.git#egg=sieve-lens[pdf]"
+# From PyPI (for released versions)
+pip install "sieve-lens[pdf]"
+pip install "sieve-lens[ocr]"
+
+# Or the latest from GitHub (may include changes not yet on PyPI)
+pip install "sieve-lens[pdf] @ git+https://github.com/neguseatama/sieve-lens.git"
+pip install "sieve-lens[ocr] @ git+https://github.com/neguseatama/sieve-lens.git"
+```
 
 ---
 
@@ -155,11 +162,25 @@ engine = SieveLensEngine()
 install(engine)                    # attach .pdf support
 obs = engine.observe("resume.pdf")
 print(obs.mask)
+```
+
+### Image OCR (requires the `ocr` extra)
+
+```python
+from sieve_lens import SieveLensEngine
+from sieve_lens_ext.ocr import install
+
+engine = SieveLensEngine()
+install(engine, ocr_lang="eng+jpn")    # tesseract language packs
+obs = engine.observe("screenshot.png")
+print(obs.mask)
+```
 
 ---
 
 ## 🔬 Testing
 
+```bash
 # v0 test suite (26 tests)
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
@@ -168,6 +189,7 @@ python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
 # v0.2 PDF extension (7 tests, requires pypdf)
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
+```
 
 ---
 
@@ -221,7 +243,7 @@ domain of **machine-readable vs. human-visible divergence**.
 
 ---
 
-## ⚠️ Known Limitations (v0.1)
+## ⚠️ Known Limitations
 
 1. **PDF and images are not supported.** This is a deliberate scope decision.
 2. **Semantic intent is not evaluated.** A visible but manipulative prompt is
@@ -234,6 +256,10 @@ domain of **machine-readable vs. human-visible divergence**.
    be confirmed by human review.
 6. **Homoglyph twins are non-ASCII -> ASCII only** — lookalike pairs
    inside ASCII (O/0, l/1) and CJK lookalikes are out of scope
+
+7. **Missing OCR language packs fail silently.** If the configured language
+   pack is not installed, OCR yields no text without an error; metadata
+   extraction is unaffected
 
 ---
 
