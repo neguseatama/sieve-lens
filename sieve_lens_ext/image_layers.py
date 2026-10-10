@@ -181,7 +181,7 @@ class ImageLayersExtractor:
         lum_fg = luminance(int(round(mean_non_bg)))
         contrast = (max(lum_bg, lum_fg) + 0.05) / (min(lum_bg, lum_fg) + 0.05)
 
-        if unique_non_bg < self._LOW_CONTRAST_MIN_UNIQUE:
+        if unique_non_bg < _LOW_CONTRAST_MIN_UNIQUE:
             return []
 
         if contrast >= self._LOW_CONTRAST_RATIO_THRESHOLD:
