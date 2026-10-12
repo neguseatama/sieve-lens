@@ -252,6 +252,10 @@ if __name__ == "__main__":
 import unittest  # noqa: E402  (defensive re-import for this appended block)
 
 
+@unittest.skipUnless(
+    PYPDF_AVAILABLE and PIL_AVAILABLE,
+    "pypdf or Pillow not installed",
+)
 class TestPdfImagesFormInlinePins(unittest.TestCase):
     """Regression pins (v0.15): pypdf 6.19.0 page.images enumerates drawn
     Form-internal and inline images, so they reach _process_image like
