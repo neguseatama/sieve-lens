@@ -258,9 +258,9 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 7. **OCR の言語パック未導入時は黙って空結果になる** — 例外は出ず、OCR テキストが
    0 件になる（メタデータ抽出は無影響）
 
----
-
 8. **PDF Form XObject のネストは上限付き** — Form 内テキストは循環防御つきで走査しますが、8 段より深いネストは走査対象外です。
+
+---
 
 ## 📄 ライセンス
 
