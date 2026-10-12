@@ -52,6 +52,11 @@ class PdfExtractor:
 
     _OOB_MIN_LENGTH = 10
 
+    # Cycle defense: the visited set (per page walk) is the primary
+    # guard; this depth cap is insurance against malformed graphs.
+    _MAX_FORM_DEPTH = 8
+
+
     def extract(self, path: Path) -> List[Segment]:
         if not PYPDF_AVAILABLE:
             raise ImportError(
@@ -130,6 +135,23 @@ class PdfExtractor:
                 location=f"page {page_num} (invisible text, Tr 3)",
             ))
 
+        for form_name, form_raw, form_hidden in self._scan_form_streams(page, reader):
+            if form_hidden:
+                segments.append(Segment(
+                    text=form_hidden,
+                    visible=False,
+                    kind="css_hidden",
+                    location=f"page {page_num} (form '{form_name}', invisible text, Tr 3)",
+                ))
+            if (form_raw and self._contains_invisible(form_raw)
+                    and not self._contains_invisible(text)):
+                segments.append(Segment(
+                    text=form_raw,
+                    visible=True,
+                    kind="body",
+                    location=f"page {page_num} (form '{form_name}', raw stream)",
+                ))
+
         return segments
 
     def _scan_stream_once(self, page, reader) -> Tuple[str, str]:
@@ -148,6 +170,14 @@ class PdfExtractor:
             return "", ""
         if contents is None:
             return "", ""
+        return self._scan_stream_object(contents, reader)
+
+    def _scan_stream_object(self, contents, reader) -> Tuple[str, str]:
+        """Scan one content-stream object (page /Contents or Form XObject).
+
+        _scan_stream_once delegates here so Form XObject streams get the
+        identical raw-rescue and Tr 3 semantics as page content streams.
+        """
         try:
             stream = ContentStream(contents, reader)
         except Exception:
@@ -181,6 +211,74 @@ class PdfExtractor:
             except Exception:
                 continue
         return "".join(raw_parts), "".join(tr3_parts)
+
+    def _scan_form_streams(self, page, reader):
+        """Walk Form XObjects declared in the page's /Resources.
+
+        Coverage principle (same as metadata/annotations): every Form
+        declared in /Resources is scanned, whether or not it is drawn
+        via /Do. Survey basis (pypdf 6.19.0, measured): page.images
+        already enumerates form/inline images and extract_text already
+        returns form-internal text, but nothing scanned form content
+        streams - Tr 3 text inside forms was reported as visible body
+        only (H4 false negative) and the raw-stream rescue never
+        reached forms.
+
+        Cycle defense: the visited set of indirect object numbers is
+        the primary guard (pypdf defends its own extract_text walk,
+        but this observer must not rely on that); _MAX_FORM_DEPTH is
+        insurance against malformed deep graphs, not the primary
+        defense.
+        """
+        results = []
+        try:
+            resources = page.get("/Resources")
+            resources = resources.get_object() if resources is not None else None
+            xobjs = resources.get("/XObject") if resources is not None else None
+            xobjs = xobjs.get_object() if xobjs is not None else None
+        except Exception:
+            return results
+        if not xobjs:
+            return results
+        visited = set()
+
+        def _walk(container, depth):
+            try:
+                keys = list(container.keys())
+            except Exception:
+                return
+            for key in keys:
+                try:
+                    obj = container[key].get_object()
+                except Exception:
+                    continue
+                if str(obj.get("/Subtype")) != "/Form":
+                    continue
+                idnum = getattr(getattr(obj, "indirect_reference", None),
+                                "idnum", None)
+                if idnum is not None:
+                    if idnum in visited:
+                        continue
+                    visited.add(idnum)
+                if depth > self._MAX_FORM_DEPTH:
+                    continue
+                try:
+                    form_raw, form_hidden = self._scan_stream_object(obj, reader)
+                except Exception:
+                    continue
+                results.append((str(key), form_raw, form_hidden))
+                try:
+                    fres = obj.get("/Resources")
+                    fres = fres.get_object() if fres is not None else None
+                    child = fres.get("/XObject") if fres is not None else None
+                    child = child.get_object() if child is not None else None
+                except Exception:
+                    continue
+                if child:
+                    _walk(child, depth + 1)
+
+        _walk(xobjs, 0)
+        return results
 
     @staticmethod
     def _contains_invisible(text: str) -> bool:

@@ -248,3 +248,165 @@ class TestPdfImagesInternalLogic(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+import unittest  # noqa: E402  (defensive re-import for this appended block)
+
+
+class TestPdfImagesFormInlinePins(unittest.TestCase):
+    """Regression pins (v0.15): pypdf 6.19.0 page.images enumerates drawn
+    Form-internal and inline images, so they reach _process_image like
+    page-level images. The mock pin is threshold-independent; the SMask
+    pin proves the end-to-end H4 path for a form-internal image."""
+
+    def _engine(self):
+        from sieve_lens import SieveLensEngine
+        from sieve_lens_ext.pdf_images import install as _install
+        engine = SieveLensEngine()
+        _install(engine)
+        return engine
+
+    def _min_size(self):
+        from sieve_lens_ext.pdf_images import PdfImagesExtractor
+        return max(96, 2 * int(getattr(PdfImagesExtractor, "_MIN_DIMENSION", 48)))
+
+    def _image_xobject(self, writer, size, rgb, alpha=None):
+        import zlib
+        from pypdf.generic import NumberObject, StreamObject
+        raw = bytes(rgb) * (size * size)
+        s = StreamObject()
+        s.set_data(zlib.compress(raw))
+        s[NameObject("/Type")] = NameObject("/XObject")
+        s[NameObject("/Subtype")] = NameObject("/Image")
+        s[NameObject("/Width")] = NumberObject(size)
+        s[NameObject("/Height")] = NumberObject(size)
+        s[NameObject("/ColorSpace")] = NameObject("/DeviceRGB")
+        s[NameObject("/BitsPerComponent")] = NumberObject(8)
+        s[NameObject("/Filter")] = NameObject("/FlateDecode")
+        if alpha is not None:
+            mask = StreamObject()
+            mask.set_data(zlib.compress(alpha))
+            mask[NameObject("/Type")] = NameObject("/XObject")
+            mask[NameObject("/Subtype")] = NameObject("/Image")
+            mask[NameObject("/Width")] = NumberObject(size)
+            mask[NameObject("/Height")] = NumberObject(size)
+            mask[NameObject("/ColorSpace")] = NameObject("/DeviceGray")
+            mask[NameObject("/BitsPerComponent")] = NumberObject(8)
+            mask[NameObject("/Filter")] = NameObject("/FlateDecode")
+            s[NameObject("/SMask")] = writer._add_object(mask)
+        return writer._add_object(s)
+
+    def test_form_and_inline_images_reach_pipeline(self):
+        import tempfile
+        from pathlib import Path as _P
+        from unittest import mock
+        from pypdf import PdfWriter
+        from pypdf.generic import (ArrayObject, DecodedStreamObject,
+                                   DictionaryObject, FloatObject, NameObject)
+        from sieve_lens_ext.pdf_images import PdfImagesExtractor
+
+        size = self._min_size()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = _P(tmp.name) / "pins.pdf"
+
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=size * 4, height=size * 4)
+
+        page_img_ref = self._image_xobject(writer, size, (10, 20, 30))
+        form_img_ref = self._image_xobject(writer, size, (200, 100, 50))
+
+        form = DecodedStreamObject()
+        form.set_data(b"q 100 0 0 100 0 0 cm /FmI Do Q")
+        form[NameObject("/Type")] = NameObject("/XObject")
+        form[NameObject("/Subtype")] = NameObject("/Form")
+        form[NameObject("/BBox")] = ArrayObject([
+            FloatObject(0), FloatObject(0),
+            FloatObject(size * 4), FloatObject(size * 4),
+        ])
+        form[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/XObject"): DictionaryObject({
+                NameObject("/FmI"): form_img_ref,
+            }),
+        })
+        form_ref = writer._add_object(form)
+
+        page[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/XObject"): DictionaryObject({
+                NameObject("/PgI"): page_img_ref,
+                NameObject("/Fm0"): form_ref,
+            }),
+        })
+        inline_data = bytes((90, 140, 200)) * (size * size)
+        contents = DecodedStreamObject()
+        contents.set_data(
+            b"q /PgI Do Q /Fm0 Do q 10 10 50 50 re W n "
+            b"BI /W %d /H %d /CS /RGB /BPC 8 ID " % (size, size)
+            + inline_data + b" EI Q"
+        )
+        page[NameObject("/Contents")] = writer._add_object(contents)
+
+        with open(path, "wb") as f:
+            writer.write(f)
+
+        calls = []
+
+        def _record(_self, image_file, page_num, img_index, seen_hashes):
+            calls.append(str(getattr(image_file, "name", None)))
+            return None
+
+        with mock.patch.object(PdfImagesExtractor, "_process_image", _record):
+            PdfImagesExtractor().extract(path)
+
+        self.assertEqual(len(calls), 3)
+        self.assertIn("PgI.png", calls)
+        self.assertIn("FmI.png", calls)
+        self.assertTrue(any(c.startswith("~") for c in calls))
+
+    def test_form_image_with_smask_triggers_h4(self):
+        import tempfile
+        from pathlib import Path as _P
+        from pypdf import PdfWriter
+        from pypdf.generic import (ArrayObject, DecodedStreamObject,
+                                   DictionaryObject, FloatObject, NameObject)
+
+        size = self._min_size()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = _P(tmp.name) / "form_smask.pdf"
+
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=size * 4, height=size * 4)
+
+        total = size * size
+        alpha = b"\x00" * (total * 2 // 5) + b"\xff" * (total - total * 2 // 5)
+        img_ref = self._image_xobject(writer, size, (120, 130, 140), alpha=alpha)
+
+        form = DecodedStreamObject()
+        form.set_data(b"q 200 0 0 200 0 0 cm /FmI Do Q")
+        form[NameObject("/Type")] = NameObject("/XObject")
+        form[NameObject("/Subtype")] = NameObject("/Form")
+        form[NameObject("/BBox")] = ArrayObject([
+            FloatObject(0), FloatObject(0),
+            FloatObject(size * 4), FloatObject(size * 4),
+        ])
+        form[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/XObject"): DictionaryObject({
+                NameObject("/FmI"): img_ref,
+            }),
+        })
+        form_ref = writer._add_object(form)
+        page[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/XObject"): DictionaryObject({
+                NameObject("/Fm0"): form_ref,
+            }),
+        })
+        contents = DecodedStreamObject()
+        contents.set_data(b"/Fm0 Do")
+        page[NameObject("/Contents")] = writer._add_object(contents)
+
+        with open(path, "wb") as f:
+            writer.write(f)
+
+        obs = self._engine().observe(path)
+        self.assertEqual(obs.h_states["H4"], 1)
+        self.assertTrue(any("image #" in str(e) for e in obs.evidence["H4"]))

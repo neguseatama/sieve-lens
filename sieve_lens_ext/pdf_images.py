@@ -117,8 +117,11 @@ class PdfImagesExtractor:
     def _get_page_images(self, page):
         """Enumerate images on a page via pypdf's page.images API.
 
-        Limitations (documented): inline images (BI/ID/EI) and images
-        inside Form XObjects are not enumerated by page.images.
+        pypdf 6.19.0 (measured): page.images enumerates BOTH inline images
+        (BI/ID/EI) and images declared inside drawn Form XObjects, so the
+        earlier "not enumerated" note no longer matched reality. Form and
+        inline images flow through the same pipeline below; regression
+        pins live in TestPdfImagesFormInlinePins (this file).
         """
         try:
             return list(page.images)
