@@ -1,3 +1,46 @@
+## [0.15.0] - 2026-10-12
+
+### Added
+- **PDF Form XObject text scanning**: text inside Form XObject content
+  streams is scanned with the same semantics as page content streams.
+  Tr 3 (invisible) text reports as hidden text (H4) with the form name in
+  the evidence location, and text-showing operands rescue zero-width/bidi
+  characters that standard extraction drops (H7). Every form declared in a
+  page's resources is covered (drawn or not); the walk is protected against
+  cyclic references and caps nesting depth at 8.
+- Regression pins: PDF form-internal and inline images reach the image
+  analysis pipeline (pypdf 6.19.0 `page.images` enumerates both), including
+  a form-internal SMask image triggering H4 end-to-end.
+
+### Changed
+- pdf_images docstring corrected: pypdf 6.19.0 enumerates form-internal and
+  inline images, so the earlier "not enumerated" note no longer matched
+  reality.
+- The new PDF image pins are skipped when Pillow is absent (the CI Pipeline
+  installs Pillow in a later step); the full-dependency workflow still runs
+  them.
+- Tests: 167 passed / 12 skipped / 5 subtests locally (previously 159 / 12).
+
+## [0.14.0] - 2026-10-12
+
+### Added
+- **OCR language selection**: `install(engine, ocr_lang=...)` accepts
+  tesseract-style language strings (default `eng`), validated at install
+  time; Japanese (`jpn`) integration test with a committed fixture.
+
+### Changed
+- **Enforced low-contrast gate**: low-contrast detection now requires at
+  least 8 distinct non-background gray levels to fire (shared with the PDF
+  image pipeline); single-color blobs and two-level noise no longer trigger.
+- README revisions: OCR quickstart, dependency notes, known-limitations
+  entries, and repaired code fences.
+
+## [0.13.0] - 2026-10-09
+
+### Changed
+- **redact_bridge homoglyph twins** expanded from 40 to 102 entries
+  (full-width digits and letters; the core observation space is unchanged).
+
 ## [0.12.0] - 2026-10-08
 
 ### Added

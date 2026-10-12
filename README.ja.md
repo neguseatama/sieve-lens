@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.13.0
+# Sieve Lens v0.15.0
 
 ## 💡 コンセプト
 
@@ -63,7 +63,7 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 | `.txt` / `.md` | プレーンテキスト、全文字スキャン | なし（Core） |
 | `.html` / `.htm` | インライン style 属性および `<style>` ブロックの隠蔽検出、オプションで外部 CSS 解決 | なし（Core）；`tinycss2`（オプション） |
 | `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
-| `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3） | `pypdf`（オプション） |
+| `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3）・Form XObject 内テキスト(Tr 3 / raw ストリーム) | `pypdf`（オプション） |
 | `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ＋言語パック（オプション） |
 
 **非対応**：音声、動画
@@ -111,6 +111,10 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
   `pypdf` + `Pillow` が必要です。
 
 ---
+- **PDF Form XObject テキスト走査**(v0.15 以降)  
+  Form XObject のコンテンツストリーム内テキスト(不可視 Tr 3 を含む)を、
+  ページ直置きと同じ意味論で走査します。ネスト Form は循環防御つきで
+  辿ります(深度 8 上限)。
 
 ## 📦 インストール
 
@@ -255,6 +259,8 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
    0 件になる（メタデータ抽出は無影響）
 
 ---
+
+8. **PDF Form XObject のネストは上限付き** — Form 内テキストは循環防御つきで走査しますが、8 段より深いネストは走査対象外です。
 
 ## 📄 ライセンス
 

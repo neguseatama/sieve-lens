@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.13.0
+# Sieve Lens v0.15.0
 
 ## 💡 Concept
 
@@ -64,7 +64,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 | `.txt`, `.md` | Plain text, full character-level scanning | none (core) |
 | `.html`, `.htm` | HTML with inline-style and `<style>` block concealment detection; optional external CSS resolution | none (core); `tinycss2` (optional) |
 | `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
-| `.pdf` | Body text, metadata, annotations, invisible text (Tr 3) | `pypdf` (optional) |
+| `.pdf` | Body text, metadata, annotations, invisible text (Tr 3), Form XObject text (Tr 3 / raw stream) | `pypdf` (optional) |
 | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary + language packs (optional) |
 
 **Not supported**: audio, video.
@@ -112,6 +112,10 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   each image. Requires `pypdf` + `Pillow`.
 
 ---
+- **PDF Form XObject text scanning** (since v0.15)  
+  Text inside Form XObject content streams, including invisible (Tr 3)
+  text, is scanned with the same semantics as page content streams;
+  nested forms are walked with cycle protection (depth cap of 8).
 
 ## 📦 Installation
 
@@ -262,6 +266,8 @@ domain of **machine-readable vs. human-visible divergence**.
    extraction is unaffected
 
 ---
+
+8. **PDF Form XObject nesting is capped.** Text inside Form XObjects is scanned with a cycle-safe walk; nesting deeper than 8 levels is skipped.
 
 ## 📄 License
 
