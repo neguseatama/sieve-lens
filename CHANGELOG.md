@@ -20,6 +20,7 @@
   installs Pillow in a later step); the full-dependency workflow still runs
   them.
 - Tests: 167 passed / 12 skipped / 5 subtests locally (previously 159 / 12).
+- README known-limitations corrected: item 1 (stale "PDF and images are not supported") now states the observation role split with Sieve Redact, and the form-nesting item moved back into the numbered list.
 
 ## [0.14.0] - 2026-10-12
 

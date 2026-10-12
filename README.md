@@ -249,7 +249,7 @@ domain of **machine-readable vs. human-visible divergence**.
 
 ## ⚠️ Known Limitations
 
-1. **PDF and images are not supported.** This is a deliberate scope decision.
+1. **Observation, not removal.** Concealment found in PDFs and images is reported; masking is Sieve Redact's domain (deliberate role split).
 2. **Semantic intent is not evaluated.** A visible but manipulative prompt is
    outside the scope of this tool.
 3. **Only inline CSS is inspected.** External stylesheets and CSS classes are
@@ -265,9 +265,9 @@ domain of **machine-readable vs. human-visible divergence**.
    pack is not installed, OCR yields no text without an error; metadata
    extraction is unaffected
 
----
-
 8. **PDF Form XObject nesting is capped.** Text inside Form XObjects is scanned with a cycle-safe walk; nesting deeper than 8 levels is skipped.
+
+---
 
 ## 📄 License
 
