@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.15.0
+# Sieve Lens v0.16.0
 
 ## 💡 Concept
 
@@ -121,7 +121,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 
 ```bash
 # Core (zero-dependency)
-pip install git+https://github.com/neguseatama/sieve-lens.git
+pip install sieve-lens
 
 # From PyPI (for released versions)
 pip install "sieve-lens[pdf]"
@@ -185,13 +185,17 @@ print(obs.mask)
 ## 🔬 Testing
 
 ```bash
-# v0 test suite (26 tests)
+# Full suite (pytest; missing optional deps are skipped)
+python -m pytest tests/ -q
+
+# Per-suite (unittest discover)
+# v0 test suite
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
-# v0.1 test suite (14 tests)
+# v0.1 test suite
 python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
-# v0.2 PDF extension (7 tests, requires pypdf)
+# v0.2 PDF extension (requires pypdf)
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 ```
 
@@ -266,6 +270,9 @@ domain of **machine-readable vs. human-visible divergence**.
    extraction is unaffected
 
 8. **PDF Form XObject nesting is capped.** Text inside Form XObjects is scanned with a cycle-safe walk; nesting deeper than 8 levels is skipped.
+
+9. **CJK script sharing:** kanji are shared between Japanese and Chinese, so a Chinese-language document may be detected as Japanese.
+10. **kaleido 1.x requires Chrome/Chromium:** PDF report charts need a local Chrome/Chromium runtime when generated with kaleido 1.x.
 
 ---
 

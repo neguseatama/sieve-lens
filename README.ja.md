@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.15.0
+# Sieve Lens v0.16.0
 
 ## 💡 コンセプト
 
@@ -120,7 +120,7 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 
 ```bash
 # Core（ゼロ依存）
-pip install git+https://github.com/neguseatama/sieve-lens.git
+pip install sieve-lens
 
 # PyPI から（リリース済みバージョン向け）
 pip install "sieve-lens[pdf]"
@@ -184,13 +184,17 @@ print(obs.mask)
 ## 🔬 テスト
 
 ```bash
-# v0 テストスイート（26件）
+# 全体実行（pytest・未導入のオプション依存は skip）
+python -m pytest tests/ -q
+
+# 個別実行（unittest discover）
+# v0 テストスイート
 python -m unittest discover -s tests -p "test_sieve_lens.py" -v
 
-# v0.1 テストスイート（14件）
+# v0.1 テストスイート
 python -m unittest discover -s tests -p "test_sieve_lens_v0_1.py" -v
 
-# v0.2 PDF 拡張（7件、pypdf 必要）
+# v0.2 PDF 拡張（pypdf 必要）
 python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 ```
 
@@ -259,6 +263,9 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
    0 件になる（メタデータ抽出は無影響）
 
 8. **PDF Form XObject のネストは上限付き** — Form 内テキストは循環防御つきで走査しますが、8 段より深いネストは走査対象外です。
+
+9. **漢字は日中で共有** — 中国語文書が日本語として判定され得ます。
+10. **kaleido 1.x は Chrome/Chromium が必要** — PDF レポートの チャート生成にはローカルの Chrome/Chromium ランタイムが必要です。
 
 ---
 
