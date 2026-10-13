@@ -1,3 +1,14 @@
+## [0.16.0] - 2026-10-13
+
+### Changed
+- README maintenance: the core install line is normalized to the PyPI
+  form (`pip install sieve-lens`); the Testing section drops the stale
+  per-suite counts and shows the full pytest invocation first; known
+  limitations add item 9 (CJK script sharing in i18n) and item 10
+  (kaleido 1.x requires Chrome/Chromium).
+- CI symmetry: the CI Pipeline OCR step installs tesseract-ocr-jpn, so
+  the Japanese OCR integration test runs in the matrix pipeline instead
+  of being skipped there.
 ## [0.15.0] - 2026-10-12
 
 ### Added
