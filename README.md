@@ -116,6 +116,16 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Text inside Form XObject content streams, including invisible (Tr 3)
   text, is scanned with the same semantics as page content streams;
   nested forms are walked with cycle protection (depth cap of 8).
+- **Control-syntax audit lane** (since v0.17)  
+  Observes documents for LLM prompt-boundary patterns: chat-template
+  special tokens (`<|im_start|>`, `[INST]`, `<<SYS>>`), override phrases
+  in English and Japanese, and pseudo structural tags. Occurrences in
+  declared system zones (document metadata) are counted and passed
+  through; unbacked occurrences become receipt findings with pattern,
+  location, and offset. The lane records surface facts only and never
+  declares intent. The vocabulary is an external JSON
+  (`control_vocab_v1.json` ships as a reference copy; the embedded
+  default applies unless a file override is given).
 
 ## 📦 Installation
 
@@ -273,6 +283,12 @@ domain of **machine-readable vs. human-visible divergence**.
 
 9. **CJK script sharing:** kanji are shared between Japanese and Chinese, so a Chinese-language document may be detected as Japanese.
 10. **kaleido 1.x requires Chrome/Chromium:** PDF report charts need a local Chrome/Chromium runtime when generated with kaleido 1.x.
+
+11. **Control-syntax matching is surface-literal.** The audit lane matches a
+   fixed vocabulary (literal substring by default, regex opt-in);
+   paraphrased, spaced-out, or glyph-substituted instructions and
+   non-listed phrases are out of scope. A finding records the surface
+   pattern and its backing status — it is not evidence of intent
 
 ---
 
