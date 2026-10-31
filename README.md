@@ -126,6 +126,17 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   declares intent. The vocabulary is an external JSON
   (`control_vocab_v1.json` ships as a reference copy; the embedded
   default applies unless a file override is given).
+- **Geometry concealment lane** (since v0.17, H8 html)  
+  Observes geometric concealment styles that keep text parseable while
+  rendering it invisible to human readers: sub-pixel `font-size`,
+  near-zero `opacity`, collapsed `transform: scale(...)`, and zero
+  `line-height`. Inline style attributes are scanned with the standard
+  library; `<style>` blocks and local `<link>` stylesheets are parsed
+  when tinycss2 is installed. The threshold set is an external JSON
+  (`geometry_thresholds_v1.json` ships as a reference copy; embedded
+  defaults apply unless a file override is given). The receipt records
+  rule, raw value, measured number, threshold, and position - facts
+  only, no intent judgment.
 
 ## 📦 Installation
 
@@ -289,6 +300,12 @@ domain of **machine-readable vs. human-visible divergence**.
    paraphrased, spaced-out, or glyph-substituted instructions and
    non-listed phrases are out of scope. A finding records the surface
    pattern and its backing status — it is not evidence of intent
+
+12. **Geometry thresholds are unit-scoped.** The geometry lane measures
+   px and unitless lengths only (em/rem/%/pt are skipped), does not
+   convert `scale()` percentage arguments, and does not descend into
+   `@media` blocks; exponent notation and negative values are outside
+   the observation scope.
 
 ---
 
