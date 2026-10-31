@@ -31,12 +31,14 @@ compose:
 
 | Package | Role | Connects to |
 |---------|------|-------------|
-| [sieve-core-engine](https://github.com/neguseatama/sieve-core) | Base logic / plugin host for the ecosystem | — |
-| [sieve-lens](https://github.com/neguseatama/sieve-lens) | Observes invisible content & hidden prompts in documents | → redact via `--from-lens` |
-| [sieve-scope](https://github.com/neguseatama/sieve-scope) | Detects structurally similar code pairs | — |
-| [sieve-referee](https://github.com/neguseatama/sieve-referee) | Detects paraphrased / reused text pairs | — |
-| [sieve-redact](https://github.com/neguseatama/sieve-redact) | Masks sensitive regions (text & PNG) with receipts | ← lens, → tray |
-| [sieve-tray](https://github.com/neguseatama/sieve-tray) | Desktop front-end that routes files to the right engine | ← all engines |
+| [sieve-core-engine](https://github.com/neguseatama/sieve-core) | Foundational engine for deterministic structure aggregation and confidence scoring | — |
+| [sieve-referee](https://github.com/neguseatama/sieve-referee) | Observes text structure, reuse, and paraphrase | — |
+| [sieve-scope](https://github.com/neguseatama/sieve-scope) | Observes structural similarity of source code | — |
+| [sieve-lens](https://github.com/neguseatama/sieve-lens) | Observes invisible content and concealment elements | → redact via `--from-lens` |
+| [sieve-redact](https://github.com/neguseatama/sieve-redact) | Deterministic masking of designated regions with completeness verification | ← lens, → tray |
+| [sieve-order](https://github.com/neguseatama/sieve-order) | Observes the surface structure of prompts in a 6-bit observation space | — |
+| [sieve-crowd](https://github.com/neguseatama/sieve-crowd) | Table-data anonymization and privacy-protection engine | — |
+| [sieve-tray](https://github.com/neguseatama/sieve-tray) | Local front-end that integrates the engines | ← all engines |
 
 Observation → masking in one pass: Lens finds what a human can't see,
 Redact removes it with a receipt that proves nothing else changed.
@@ -110,8 +112,6 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   Extracts images embedded in PDF pages and applies OCR, transparent
   layer detection, low-contrast detection, and metadata analysis to
   each image. Requires `pypdf` + `Pillow`.
-
----
 - **PDF Form XObject text scanning** (since v0.15)  
   Text inside Form XObject content streams, including invisible (Tr 3)
   text, is scanned with the same semantics as page content streams;

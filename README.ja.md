@@ -29,12 +29,14 @@ Sieve は、決定的・ゼロ依存・完全ローカルという共通の設�
 
 | パッケージ | 役割 | 接続 |
 |---------|------|-------------|
-| [sieve-core-engine](https://github.com/neguseatama/sieve-core) | エコシステムの基盤ロジック / プラグインホスト | — |
-| [sieve-lens](https://github.com/neguseatama/sieve-lens) | 文書内の不可視コンテンツ・隠しプロンプトを観測 | → `--from-lens` 経由で redact へ |
-| [sieve-scope](https://github.com/neguseatama/sieve-scope) | 構造的に類似したコードペアを検出 | — |
-| [sieve-referee](https://github.com/neguseatama/sieve-referee) | 言い換え・流用されたテキストペアを検出 | — |
-| [sieve-redact](https://github.com/neguseatama/sieve-redact) | 機密領域をレシートつきでマスキング (テキスト & PNG) | ← lens、→ tray |
-| [sieve-tray](https://github.com/neguseatama/sieve-tray) | ファイルを適切なエンジンへ振り分けるデスクトップフロントエンド | ← 全エンジン |
+| [sieve-core-engine](https://github.com/neguseatama/sieve-core) | 決定論的な構造集約・確信度評価の基盤エンジン | — |
+| [sieve-referee](https://github.com/neguseatama/sieve-referee) | テキストの構造・流用・言い換えを観測するエンジン | — |
+| [sieve-scope](https://github.com/neguseatama/sieve-scope) | ソースコードの構造的類似性を観測するエンジン | — |
+| [sieve-lens](https://github.com/neguseatama/sieve-lens) | 不可視コンテンツや隠蔽要素を観測するエンジン | → `--from-lens` 経由で redact へ |
+| [sieve-redact](https://github.com/neguseatama/sieve-redact) | 指定領域の決定論的マスキングと完全性検証 | ← lens、→ tray |
+| [sieve-order](https://github.com/neguseatama/sieve-order) | プロンプトの表層構造を 6-bit 観測空間で観測するエンジン | — |
+| [sieve-crowd](https://github.com/neguseatama/sieve-crowd) | テーブルデータ匿名化・プライバシー保護エンジン | — |
+| [sieve-tray](https://github.com/neguseatama/sieve-tray) | 各エンジンを統合するローカルフロントエンド | ← 全エンジン |
 
 観測から排除まで 1 パスで: Lens が人間に見えないものを見つけ、
 Redact が「他は何も変わっていない」ことを証明するレシートとともに
@@ -109,8 +111,6 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
   PDF ページに埋め込まれた画像を抽出し、各画像に OCR・透過レイヤー検出・
   低コントラスト検出・メタデータ解析を適用します。
   `pypdf` + `Pillow` が必要です。
-
----
 - **PDF Form XObject テキスト走査**(v0.15 以降)  
   Form XObject のコンテンツストリーム内テキスト(不可視 Tr 3 を含む)を、
   ページ直置きと同じ意味論で走査します。ネスト Form は循環防御つきで
