@@ -1,14 +1,26 @@
-"""Sieve Lens geometry lane (structural concealment observation, H8 html).
+"""Sieve Lens geometry lane (structural concealment observation, H8).
 
-Observes HTML documents for *geometric* concealment styles that keep text
-present in the DOM (and therefore readable by parsers and LLM ingest
-pipelines) while rendering it invisible to human readers:
+Observes documents for *geometric* concealment that keeps text present in
+the content (and therefore readable by parsers and LLM ingest pipelines)
+while rendering it invisible to human readers.
+
+HTML side (H8 html):
 
   - font-size at or below a sub-pixel threshold (e.g. font-size: 0.1px)
   - opacity at or below a near-zero threshold (e.g. opacity: 0.005)
   - transform scale factors at or below a near-zero threshold
     (e.g. transform: scale(0), scaleY(0.001))
   - line-height collapsed to zero (e.g. line-height: 0)
+
+PDF side (H8 pdf, v2 thresholds onward):
+
+  - text operators with a font size at or below the tiny threshold
+    (e.g. ``/F1 0.05 Tf``)
+  - text placement (``Tm``) at coordinates outside the page MediaBox
+
+  Tr 3 invisible text is NOT re-observed here: the PDF extension already
+  routes it into H4 segments (v0.15), and the lane never double-counts
+  another lane's coverage.
 
 The built-in HTML/CSS extension (H4) reports exact-zero cases such as
 ``opacity: 0`` as css_hidden segments. This lane covers the *threshold
@@ -51,37 +63,47 @@ Thresholds (house rules, mirrors the control-vocab convention):
   - The receipt records thresholds_sha256 -- a digest of the threshold
     CONTENT (canonical JSON), not of its path label -- so any receipt
     stays reproducible against the exact thresholds that produced it.
-  - A repo-root reference copy ships as geometry_thresholds_v1.json.
+  - A repo-root reference copy ships as geometry_thresholds_v2.json.
 
-Thresholds JSON shape:
-    {"version": "1", "lane": "geometry",
+Thresholds JSON shape (v2, adds the PDF key):
+    {"version": "2", "lane": "geometry",
      "thresholds": {
-       "font_size_px_max": 0.5,   # observe 0 <= font-size <= max (px/unitless)
-       "opacity_max": 0.01,       # observe 0 <= opacity <= max (unitless)
-       "scale_max": 0.01,         # observe any unitless scale axis in [0, max]
-       "line_height_max": 0.0}}   # observe 0 <= line-height <= max (px/unitless)
+       "font_size_px_max": 0.5,      # HTML: 0 <= font-size <= max (px/unitless)
+       "opacity_max": 0.01,          # HTML: 0 <= opacity <= max (unitless)
+       "scale_max": 0.01,            # HTML: any unitless scale axis in [0, max]
+       "line_height_max": 0.0,       # HTML: 0 <= line-height <= max (px/unitless)
+       "pdf_font_size_pt_max": 0.5}} # PDF: 0 <= Tf size <= max (pt)
 
-Known scope limits (v1):
+Known scope limits (v2):
   - only px and unitless lengths are measured (em/rem/%/pt are skipped)
   - negative or malformed values are skipped
   - exponents (1e-3px) are not parsed
   - scale() percentage arguments are not converted (unitless only)
   - @media blocks and nested rules are not descended into
   - matrix(...) collapse is not observed (future vocabulary)
+  - PDF out-of-bounds checks the Tm operands of the un-transformed text
+    space; relative moves (Td/TD/T*/TL accumulation) and the graphics
+    CTM (cm) are not composed into the position (future vocabulary)
+  - PDF same-color-as-background fills are not observed (future
+    vocabulary; highest operator cost)
 
 Usage:
-    from sieve_lens_ext.geometry import audit_geometry, report_json
+    from sieve_lens_ext.geometry import audit_geometry, audit_pdf_geometry
 
     report = audit_geometry(html_text, source="page.html")
+    report = audit_pdf_geometry(path, source="doc.pdf")
     print(report_json(report))
 
 CLI:
     python -m sieve_lens_ext.geometry IN OUT.json [THRESHOLDS.json]
+    .pdf inputs take the PDF subscan; everything else is scanned as HTML.
     Exit codes: 0 = receipt written / 1 = failure (usage, read, or
     invalid thresholds file).
 
 Requires: Python standard library; tinycss2 >= 1.1 for <style> and
-<link> sources (optional, same extra as sieve_lens_ext.html_css).
+<link> sources (optional, same extra as sieve_lens_ext.html_css);
+pypdf >= 4.0 for PDF inputs (optional, same extra as
+sieve_lens_ext.pdf).
 """
 
 from __future__ import annotations
@@ -103,6 +125,13 @@ try:
 except ImportError:
     TINYCSS2_AVAILABLE = False
 
+try:
+    from pypdf import PdfReader
+    from pypdf.generic import ContentStream
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+
 from sieve_lens import strip_leading_bom
 
 
@@ -110,25 +139,27 @@ LANE_NAME = "geometry"
 SCHEMA = "sieve-lens.geometry/1"
 
 _DEFAULT_THRESHOLDS_JSON = """{
-  "version": "1",
+  "version": "2",
   "lane": "geometry",
-  "description": "Sieve Lens geometry concealment thresholds (default, v1)",
+  "description": "Sieve Lens geometry concealment thresholds (default, v2)",
   "thresholds": {
     "font_size_px_max": 0.5,
     "opacity_max": 0.01,
     "scale_max": 0.01,
-    "line_height_max": 0.0
+    "line_height_max": 0.0,
+    "pdf_font_size_pt_max": 0.5
   }
 }
 """
 
 _THRESHOLD_KEYS = ("font_size_px_max", "opacity_max", "scale_max",
-                   "line_height_max")
+                   "line_height_max", "pdf_font_size_pt_max")
 _THRESHOLD_BOUNDS = {
     "font_size_px_max": (0.0, 10.0),
     "opacity_max": (0.0, 1.0),
     "scale_max": (0.0, 1.0),
     "line_height_max": (0.0, 1.0),
+    "pdf_font_size_pt_max": (0.0, 10.0),
 }
 
 _SCALE_FUNC = re.compile(
@@ -151,6 +182,7 @@ class Thresholds:
     opacity_max: float
     scale_max: float
     line_height_max: float
+    pdf_font_size_pt_max: float
     sha256: str
     source: str
 
@@ -160,6 +192,7 @@ class Thresholds:
             "opacity_max": self.opacity_max,
             "scale_max": self.scale_max,
             "line_height_max": self.line_height_max,
+            "pdf_font_size_pt_max": self.pdf_font_size_pt_max,
         }
 
 
@@ -561,8 +594,250 @@ def audit_geometry(html_text: str, thresholds: Optional[Thresholds] = None,
 
 
 # ----------------------------------------------------------------------
-# Receipt rendering
+# PDF subscan (pypdf, optional)
 # ----------------------------------------------------------------------
+
+_MAX_PDF_FORM_DEPTH = 8
+
+
+def _pdf_mediabox(page) -> Optional[Tuple[float, float, float, float]]:
+    """Return the page MediaBox as (x0, y0, x1, y1), or None if unusable."""
+    try:
+        box = page.mediabox
+        x0, y0 = float(box.left), float(box.bottom)
+        x1, y1 = float(box.right), float(box.top)
+    except Exception:
+        return None
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0  # defensive, degenerate boxes
+    return x0, y0, x1, y1
+
+
+def _pdf_num(operand) -> Optional[float]:
+    """Return a float for a pypdf numeric operand, else None.
+
+    Non-numeric, boolean, NaN, and infinite operands are outside the
+    observation scope (determinism and explainability, like the HTML
+    parser skipping malformed values).
+    """
+    if isinstance(operand, bool) or not isinstance(operand, (int, float)):
+        return None
+    value = float(operand)
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value
+
+
+def _pdf_num_str(value: float) -> str:
+    """Deterministic, compact string form of a measured operator number."""
+    if value == int(value) and abs(value) < 1e16:
+        return str(int(value))
+    return repr(value)
+
+
+def _eval_pdf_tiny_tfs(operands, t: Thresholds) -> List[dict]:
+    """Rule pdf_font_size_tiny: a Tf declaration at or below the threshold.
+
+    HTML-side convention: the declaration itself is the fact -- whether
+    any text is later shown with this font is not judged.
+    """
+    size = _pdf_num(operands[1])
+    if size is None or not (0.0 <= size <= t.pdf_font_size_pt_max):
+        return []
+    return [{
+        "rule": "pdf_font_size_tiny", "property": "Tf font size",
+        "value": _pdf_num_str(size), "measured": size,
+        "threshold": t.pdf_font_size_pt_max,
+    }]
+
+
+def _eval_pdf_oob_tm(operands, mediabox) -> List[dict]:
+    """Rule pdf_text_out_of_bounds: Tm placement outside the MediaBox.
+
+    Checked against the un-transformed text-space operands (see module
+    docstring, known scope limits). Exactly on the box is inside; any
+    side strictly outside fires once per out-of-bounds Tm.
+
+    Operand shapes: pypdf's ContentStream folds the 6-operand text
+    matrix into its (e, f) translation tail; raw operator walks may
+    also see the full 6 operands. Both shapes are handled, the full
+    form via its e/f indices 4 and 5.
+    """
+    if mediabox is None:
+        return []
+    if len(operands) >= 6:
+        e, f = _pdf_num(operands[4]), _pdf_num(operands[5])
+    elif len(operands) == 2:
+        e, f = _pdf_num(operands[0]), _pdf_num(operands[1])
+    else:
+        return []
+    if e is None or f is None:
+        return []
+    x0, y0, x1, y1 = mediabox
+    if x0 <= e <= x1 and y0 <= f <= y1:
+        return []
+    return [{
+        "rule": "pdf_text_out_of_bounds", "property": "Tm position",
+        "value": f"{_pdf_num_str(e)} {_pdf_num_str(f)}",
+        "measured": [e, f],
+        "threshold": [x0, y0, x1, y1],
+    }]
+
+
+def _scan_pdf_stream_object(contents, reader, mediabox, t: Thresholds,
+                            observations, scanned) -> None:
+    """Walk one content stream (page /Contents or Form XObject).
+
+    Same ContentStream operator enumeration as sieve_lens_ext.pdf.
+    Observations are appended in stream order and never re-sorted; they
+    carry the rule facts (plus the font resource for Tf), and the caller
+    stamps origin/location immediately after the scan.
+    """
+    try:
+        stream = ContentStream(contents, reader)
+    except Exception:
+        scanned["streams_unreadable"] += 1
+        return
+    for operands, operator in stream.operations:
+        try:
+            scanned["operators_seen"] += 1
+            if operator == b"Tf" and len(operands) >= 2:
+                for obs in _eval_pdf_tiny_tfs(operands, t):
+                    obs["font"] = str(operands[0]).strip()
+                    observations.append(obs)
+            elif operator == b"Tm":
+                for obs in _eval_pdf_oob_tm(operands, mediabox):
+                    observations.append(obs)
+        except Exception:
+            continue
+
+
+def _pdf_form_walk(resources, page_label: str, reader, mediabox,
+                   t: Thresholds, observations, scanned) -> None:
+    """Walk Form XObjects declared in /Resources (pdf.py coverage rule).
+
+    Every form declared in /Resources is scanned whether or not it is
+    drawn via /Do. The visited set of indirect object numbers (fresh per
+    page, same as sieve_lens_ext.pdf) is the primary cycle guard;
+    _MAX_PDF_FORM_DEPTH is insurance against malformed deep graphs.
+    """
+    try:
+        resources = resources.get_object() if resources is not None else None
+        xobjs = resources.get("/XObject") if resources is not None else None
+        xobjs = xobjs.get_object() if xobjs is not None else None
+    except Exception:
+        return
+    if not xobjs:
+        return
+    visited = set()
+
+    def _walk(container, depth):
+        try:
+            keys = list(container.keys())
+        except Exception:
+            return
+        for key in keys:
+            try:
+                obj = container[key].get_object()
+            except Exception:
+                continue
+            if str(obj.get("/Subtype")) != "/Form":
+                continue
+            idnum = getattr(getattr(obj, "indirect_reference", None),
+                            "idnum", None)
+            if idnum is not None:
+                if idnum in visited:
+                    continue
+                visited.add(idnum)
+            if depth > _MAX_PDF_FORM_DEPTH:
+                continue
+            scanned["form_xobjects"] += 1
+            base = len(observations)
+            _scan_pdf_stream_object(obj, reader, mediabox, t, observations,
+                                    scanned)
+            for obs in observations[base:]:
+                obs["origin"] = "form_stream"
+                obs["location"] = f"{page_label} (form '{str(key)}')"
+            try:
+                fres = obj.get("/Resources")
+                child = fres.get("/XObject") if fres is not None else None
+                child = child.get_object() if child is not None else None
+            except Exception:
+                continue
+            if child:
+                _walk(child, depth + 1)
+
+    _walk(xobjs, 0)
+
+
+def audit_pdf_geometry(path, thresholds: Optional[Thresholds] = None,
+                       thresholds_path: Optional[str] = None,
+                       source: Optional[str] = None) -> GeometryReport:
+    """Audit a PDF file for geometric concealment operators (facts only).
+
+    Walks every page content stream and every Form XObject declared in
+    /Resources (same coverage rule as sieve_lens_ext.pdf), in page order,
+    collecting Tf / Tm observations in encounter order. Emits its own
+    receipt and never touches segments, so H1-H7 semantics are unchanged.
+    Tr 3 invisible text is intentionally not re-observed here (already
+    routed to H4 by sieve_lens_ext.pdf since v0.15).
+    """
+    if not PYPDF_AVAILABLE:
+        raise ImportError(
+            "sieve_lens_ext.geometry PDF subscan requires pypdf. "
+            "Install with: pip install sieve-lens[pdf]")
+    if thresholds is None:
+        thresholds = load_thresholds(thresholds_path)
+
+    report = GeometryReport(
+        source=source if source is not None else str(path),
+        thresholds=thresholds.as_dict(),
+        thresholds_sha256=thresholds.sha256,
+        thresholds_source=thresholds.source,
+        block_css_parsed=False,
+        scanned={
+            "pages": 0,
+            "page_streams": 0,
+            "form_xobjects": 0,
+            "streams_unreadable": 0,
+            "operators_seen": 0,
+        },
+    )
+    observations = report.observations
+
+    with open(path, "rb") as f:
+        reader = PdfReader(f)
+        for page_num, page in enumerate(reader.pages, start=1):
+            report.scanned["pages"] += 1
+            mediabox = _pdf_mediabox(page)
+            page_label = f"page {page_num}"
+
+            base = len(observations)
+            try:
+                contents = page.get_contents()
+            except Exception:
+                contents = None
+            if contents is not None:
+                report.scanned["page_streams"] += 1
+                _scan_pdf_stream_object(contents, reader, mediabox,
+                                        thresholds, observations,
+                                        report.scanned)
+                for obs in observations[base:]:
+                    obs["origin"] = "page_stream"
+                    obs["location"] = page_label
+
+            try:
+                resources = page.get("/Resources")
+            except Exception:
+                resources = None
+            if resources is not None:
+                _pdf_form_walk(resources, page_label, reader, mediabox,
+                               thresholds, observations, report.scanned)
+
+    return report
+
 
 def report_json(report: GeometryReport) -> str:
     """Deterministic JSON receipt (trailing newline included)."""
@@ -591,7 +866,8 @@ def format_geometry_report(report: GeometryReport) -> str:
     lines.append(
         "  Thresholds: font-size<={font_size_px_max}px, "
         "opacity<={opacity_max}, scale<={scale_max}, "
-        "line-height<={line_height_max}px".format(**th))
+        "line-height<={line_height_max}px, "
+        "pdf Tf<={pdf_font_size_pt_max}pt".format(**th))
     lines.append(f"  Thresholds src: {report.thresholds_source} "
                  f"(sha256 {report.thresholds_sha256})")
     lines.append(f"  Block CSS parsed: {report.block_css_parsed}")
@@ -620,7 +896,10 @@ def format_geometry_report(report: GeometryReport) -> str:
 # ----------------------------------------------------------------------
 
 def main(argv=None) -> int:
-    """CLI: IN OUT.json [THRESHOLDS.json]. 0 = success / 1 = failure."""
+    """CLI: IN OUT.json [THRESHOLDS.json]. 0 = success / 1 = failure.
+
+    .pdf inputs take the PDF subscan; everything else is scanned as HTML.
+    """
     if argv is None:
         argv = sys.argv[1:]
     if len(argv) not in (2, 3):
@@ -634,16 +913,19 @@ def main(argv=None) -> int:
         print(f"geometry: cannot read {src}", file=sys.stderr)
         return 1
     try:
-        html_text = strip_leading_bom(
-            src_path.read_text(encoding="utf-8", errors="replace"))
-    except OSError as exc:
-        print(f"geometry: cannot read {src}: {exc}", file=sys.stderr)
-        return 1
-    try:
-        report = audit_geometry(html_text, thresholds_path=th_path,
-                                base_dir=str(src_path.parent),
-                                source=str(src_path))
+        if src_path.suffix.lower() == ".pdf":
+            report = audit_pdf_geometry(src_path, thresholds_path=th_path,
+                                        source=str(src_path))
+        else:
+            html_text = strip_leading_bom(
+                src_path.read_text(encoding="utf-8", errors="replace"))
+            report = audit_geometry(html_text, thresholds_path=th_path,
+                                    base_dir=str(src_path.parent),
+                                    source=str(src_path))
     except ValueError as exc:
+        print(f"geometry: {exc}", file=sys.stderr)
+        return 1
+    except ImportError as exc:
         print(f"geometry: {exc}", file=sys.stderr)
         return 1
     try:

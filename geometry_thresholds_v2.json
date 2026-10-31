@@ -1,0 +1,12 @@
+{
+  "version": "2",
+  "lane": "geometry",
+  "description": "Sieve Lens geometry concealment thresholds (default, v2)",
+  "thresholds": {
+    "font_size_px_max": 0.5,
+    "opacity_max": 0.01,
+    "scale_max": 0.01,
+    "line_height_max": 0.0,
+    "pdf_font_size_pt_max": 0.5
+  }
+}

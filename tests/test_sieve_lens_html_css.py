@@ -22,12 +22,22 @@ except ImportError:
 from sieve_lens_ext.geometry import (  # noqa: E402
     _DEFAULT_THRESHOLDS_JSON,
     audit_geometry,
+    audit_pdf_geometry,
     format_geometry_report,
     load_thresholds,
     main as geometry_main,
     report_json,
 )
 from sieve_lens_ext.html_css import install
+
+try:
+    from pypdf import PdfReader, PdfWriter  # noqa: E402
+    from pypdf.generic import (  # noqa: E402
+        ArrayObject, DecodedStreamObject, NameObject,
+    )
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
 
 
 @unittest.skipUnless(TINYCSS2_AVAILABLE, "tinycss2 not installed")
@@ -214,13 +224,14 @@ class TestGeometryThresholds(unittest.TestCase):
             "opacity_max": 0.01,
             "scale_max": 0.01,
             "line_height_max": 0.0,
+            "pdf_font_size_pt_max": 0.5,
         })
         self.assertEqual(t.source, "embedded")
         self.assertRegex(t.sha256, r"^[0-9a-f]{64}$")
 
     def test_repo_reference_matches_embedded(self):
         ref = Path(__file__).resolve().parent.parent / \
-            "geometry_thresholds_v1.json"
+            "geometry_thresholds_v2.json"
         self.assertEqual(
             json.loads(ref.read_text(encoding="utf-8")),
             json.loads(_DEFAULT_THRESHOLDS_JSON))
@@ -273,14 +284,14 @@ class TestGeometryThresholds(unittest.TestCase):
     def test_sha256_is_content_digest(self):
         # Same content from a different path -> same digest as embedded.
         ref = Path(__file__).resolve().parent.parent / \
-            "geometry_thresholds_v1.json"
+            "geometry_thresholds_v2.json"
         copy = self._write("copy.json", ref.read_text(encoding="utf-8"))
         self.assertEqual(load_thresholds(str(copy)).sha256,
                          load_thresholds(None).sha256)
 
     def test_sha256_changes_with_content(self):
         ref = Path(__file__).resolve().parent.parent / \
-            "geometry_thresholds_v1.json"
+            "geometry_thresholds_v2.json"
         data = json.loads(ref.read_text(encoding="utf-8"))
         data["thresholds"]["opacity_max"] = 0.02
         modified = self._write("modified.json", json.dumps(data))
@@ -535,6 +546,168 @@ class TestGeometryReport(unittest.TestCase):
             th2.write_text(json.dumps({"thresholds": {"nope": 1}}),
                            encoding="utf-8")
             self.assertEqual(geometry_main([str(src), str(dst), str(th2)]), 1)
+
+
+# ----------------------------------------------------------------------
+# Geometry lane (H8 pdf): tiny Tf / out-of-bounds Tm subscan
+# ----------------------------------------------------------------------
+
+try:
+    from pypdf.generic import DictionaryObject, FloatObject  # noqa: E402
+except ImportError:
+    pass
+
+
+@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
+class TestGeometryPdf(unittest.TestCase):
+    """H8 pdf subscan: facts only, H1-H7 segments untouched."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_pdf(self, name="doc.pdf", content=b"",
+                   form_stream=None) -> Path:
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=612, height=792)
+        stream = DecodedStreamObject()
+        stream.set_data(content)
+        page[NameObject("/Contents")] = stream
+        if form_stream is not None:
+            form = DecodedStreamObject()
+            form.set_data(form_stream)
+            form.update({
+                NameObject("/Type"): NameObject("/XObject"),
+                NameObject("/Subtype"): NameObject("/Form"),
+                NameObject("/BBox"): ArrayObject([
+                    FloatObject(0), FloatObject(0),
+                    FloatObject(612), FloatObject(792)]),
+            })
+            form_ref = writer._add_object(form)
+            xobjs = DictionaryObject()
+            xobjs[NameObject("/Fx1")] = form_ref
+            resources = DictionaryObject()
+            resources[NameObject("/XObject")] = xobjs
+            page[NameObject("/Resources")] = resources
+        path = Path(self._tmpdir.name) / name
+        with open(path, "wb") as f:
+            writer.write(f)
+        return path
+
+    def _rules(self, rep):
+        return [o["rule"] for o in rep.observations]
+
+    def test_tiny_tf_observed(self):
+        path = self._write_pdf(
+            content=b"BT /F1 0.05 Tf 100 700 Td (x) Tj ET")
+        rep = audit_pdf_geometry(path)
+        self.assertEqual(len(rep.observations), 1)
+        obs = rep.observations[0]
+        self.assertEqual(obs["rule"], "pdf_font_size_tiny")
+        self.assertEqual(obs["measured"], 0.05)
+        self.assertEqual(obs["threshold"], 0.5)
+        self.assertEqual(obs["origin"], "page_stream")
+        self.assertEqual(obs["location"], "page 1")
+        self.assertEqual(obs["font"], "/F1")
+
+    def test_normal_tf_not_observed(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 100 700 Td (x) Tj ET")
+        self.assertEqual(audit_pdf_geometry(path).observations, [])
+
+    def test_threshold_boundary_inclusive(self):
+        at = self._write_pdf("at.pdf",
+                             content=b"BT /F1 0.5 Tf 10 10 Td (x) Tj ET")
+        above = self._write_pdf("above.pdf",
+                                content=b"BT /F1 0.6 Tf 10 10 Td (x) Tj ET")
+        self.assertEqual(self._rules(audit_pdf_geometry(at)),
+                         ["pdf_font_size_tiny"])
+        self.assertEqual(audit_pdf_geometry(above).observations, [])
+
+    def test_oob_tm_observed(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf -2000 500 Tm (x) Tj ET")
+        rep = audit_pdf_geometry(path)
+        self.assertEqual(len(rep.observations), 1)
+        obs = rep.observations[0]
+        self.assertEqual(obs["rule"], "pdf_text_out_of_bounds")
+        self.assertEqual(obs["measured"], [-2000.0, 500.0])
+        self.assertEqual(obs["threshold"], [0.0, 0.0, 612.0, 792.0])
+        self.assertEqual(obs["origin"], "page_stream")
+
+    def test_inbounds_tm_not_observed(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 100 700 Tm (x) Tj ET")
+        self.assertEqual(audit_pdf_geometry(path).observations, [])
+
+    def test_boundary_on_box_counts_as_inside(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 0 0 Tm (a) Tj 612 792 Tm (b) Tj ET")
+        self.assertEqual(audit_pdf_geometry(path).observations, [])
+
+    def test_form_stream_observed(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 100 700 Tm (visible) Tj ET",
+            form_stream=b"BT /F1 0.05 Tf 20 20 Tm (hidden) Tj ET")
+        rep = audit_pdf_geometry(path)
+        self.assertEqual(len(rep.observations), 1)
+        obs = rep.observations[0]
+        self.assertEqual(obs["rule"], "pdf_font_size_tiny")
+        self.assertEqual(obs["origin"], "form_stream")
+        self.assertEqual(obs["location"], "page 1 (form '/Fx1')")
+
+    def test_threshold_override_changes_result(self):
+        path = self._write_pdf(
+            content=b"BT /F1 0.05 Tf 10 10 Td (x) Tj ET")
+        self.assertEqual(len(audit_pdf_geometry(path).observations), 1)
+        th = Path(self._tmpdir.name) / "th.json"
+        data = json.loads(_DEFAULT_THRESHOLDS_JSON)
+        data["thresholds"]["pdf_font_size_pt_max"] = 0.01
+        th.write_text(json.dumps(data), encoding="utf-8")
+        rep = audit_pdf_geometry(path, thresholds_path=str(th))
+        self.assertEqual(rep.observations, [])
+        self.assertEqual(rep.thresholds_source, str(th))
+
+    def test_tr3_not_double_counted(self):
+        # Tr 3 invisible text is H4 territory (v0.15); the geometry lane
+        # observes neither the text nor the normal-size Tf.
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 3 Tr 100 700 Td (x) Tj ET")
+        self.assertEqual(audit_pdf_geometry(path).observations, [])
+
+    def test_receipt_structure_and_determinism(self):
+        path = self._write_pdf(
+            content=b"BT /F1 0.05 Tf -2000 500 Tm (x) Tj ET")
+        rep = audit_pdf_geometry(path, source="doc.pdf")
+        payload = json.loads(report_json(rep))
+        self.assertEqual(payload["lane"], "geometry")
+        self.assertNotIn("verdict", payload)
+        self.assertNotIn("verdict", payload["observations"][0])
+        self.assertEqual(payload["scanned"]["pages"], 1)
+        self.assertEqual(payload["thresholds"]["pdf_font_size_pt_max"], 0.5)
+        again = audit_pdf_geometry(path, source="doc.pdf")
+        self.assertEqual(report_json(rep), report_json(again))
+
+    def test_clean_pdf_yields_zero(self):
+        path = self._write_pdf(
+            content=b"BT /F1 12 Tf 100 700 Td (hello) Tj ET")
+        rep = audit_pdf_geometry(path)
+        self.assertEqual(rep.observations, [])
+        self.assertEqual(rep.scanned["pages"], 1)
+        self.assertEqual(rep.scanned["page_streams"], 1)
+
+    def test_cli_pdf_roundtrip(self):
+        path = self._write_pdf(
+            content=b"BT /F1 0.05 Tf 100 700 Td (x) Tj ET")
+        dst = Path(self._tmpdir.name) / "out.json"
+        rc = geometry_main([str(path), str(dst)])
+        self.assertEqual(rc, 0)
+        payload = json.loads(dst.read_text(encoding="utf-8"))
+        self.assertEqual(payload["observation_count"], 1)
+        self.assertEqual(payload["observations"][0]["rule"],
+                         "pdf_font_size_tiny")
 
 
 if __name__ == "__main__":
