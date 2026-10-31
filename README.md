@@ -126,14 +126,17 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   declares intent. The vocabulary is an external JSON
   (`control_vocab_v1.json` ships as a reference copy; the embedded
   default applies unless a file override is given).
-- **Geometry concealment lane** (since v0.17, H8 html)  
+- **Geometry concealment lane** (since v0.17, H8 html; PDF subscan v0.18)  
   Observes geometric concealment styles that keep text parseable while
   rendering it invisible to human readers: sub-pixel `font-size`,
   near-zero `opacity`, collapsed `transform: scale(...)`, and zero
   `line-height`. Inline style attributes are scanned with the standard
   library; `<style>` blocks and local `<link>` stylesheets are parsed
-  when tinycss2 is installed. The threshold set is an external JSON
-  (`geometry_thresholds_v1.json` ships as a reference copy; embedded
+  when tinycss2 is installed. The PDF subscan walks page content
+  streams and Form XObjects and observes tiny `Tf` font sizes and
+  `Tm` placements outside the page MediaBox (Tr 3 stays with the PDF
+  extension's H4 coverage). The threshold set is an external JSON
+  (`geometry_thresholds_v2.json` ships as a reference copy; embedded
   defaults apply unless a file override is given). The receipt records
   rule, raw value, measured number, threshold, and position - facts
   only, no intent judgment.
@@ -306,6 +309,12 @@ domain of **machine-readable vs. human-visible divergence**.
    convert `scale()` percentage arguments, and does not descend into
    `@media` blocks; exponent notation and negative values are outside
    the observation scope.
+
+13. **PDF geometry positions are un-composed.** The PDF subscan checks
+   `Tm` operands of the un-transformed text space; relative moves
+   (`Td`/`TD`/`T*`/`TL` accumulation) and the graphics CTM (`cm`) are
+   not composed into the position, and same-color-as-background fills
+   are not observed (future vocabulary).
 
 ---
 
