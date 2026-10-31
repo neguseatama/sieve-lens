@@ -1,3 +1,30 @@
+## [0.17.0] - 2026-10-31
+
+### Added
+- **Control-syntax audit lane**: a dedicated observation lane for
+  AI prompt-boundary control markup (system / role / tool fences and
+  model-facing directives embedded in documents). Matching is
+  surface-literal; findings are reported in the lane's own receipt
+  (known limitation 11). `control_vocab_sha256` now digests the vocab
+  content itself instead of its source label, so identical vocab sets
+  hash identically regardless of origin.
+- **Geometry concealment lane (HTML subscan)**: observes text hidden by
+  geometric CSS — `font-size: 0/0.1px`, `opacity: 0`,
+  `transform: scale(0)`, `line-height: 0` — and reports it as H8 with
+  per-technique threshold observation and evidence
+  (known limitation 12).
+- **Geometry concealment PDF subscan**: stream scanning also observes
+  render mode 3 (`/Tr 3`), extremely small `Tf` font sizes, and
+  out-of-bounds `Tm` text positions as H8 concealment signals
+  (known limitation 13).
+
+### Changed
+- README maintenance: the Sieve series table lists all eight canonical
+  engines (Core / Referee / Scope / Lens / Redact / Order / Crowd /
+  Tray) with their canonical one-line descriptions, and a stray
+  horizontal rule that split the Key Features list after the v0.10
+  entry (rendering later bullets as an orphan list) is removed.
+
 ## [0.16.0] - 2026-10-13
 
 ### Changed
