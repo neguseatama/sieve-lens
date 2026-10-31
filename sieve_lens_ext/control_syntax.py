@@ -269,7 +269,29 @@ def _validate_vocab(data, source: str) -> ControlVocab:
             description=description,
             compiled=compiled,
         ))
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    digest_payload = json.dumps(
+        {
+            "backing_kinds": list(raw_backing),
+            "patterns": [
+                {
+                    "category": s.category,
+                    "name": s.name,
+                    "pattern": s.pattern,
+                    "match": s.match,
+                    "case_sensitive": s.case_sensitive,
+                    "description": s.description,
+                }
+                for s in specs
+            ],
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    # Content digest: identical vocab content yields the same sha256
+    # regardless of its path, so a receipt stays reproducible against
+    # the exact vocab that produced it.
+    digest = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
     return ControlVocab(
         patterns=tuple(specs),
         backing_kinds=tuple(raw_backing),

@@ -1,3 +1,4 @@
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -227,6 +228,27 @@ class TestControlSyntaxVocab(_Base):
         self.assertEqual(
             json.loads(ref.read_text(encoding="utf-8")),
             json.loads(_DEFAULT_VOCAB_JSON))
+
+    def test_vocab_sha256_is_content_digest(self):
+        # Same vocab content loaded from a different path must yield the
+        # same sha256 as the embedded default (content digest, not a
+        # digest of the path label).
+        ref = _REPO_ROOT / "control_vocab_v1.json"
+        copy = self._write("vocab_copy.json",
+                           ref.read_text(encoding="utf-8"))
+        from_file = load_control_vocab(str(copy))
+        embedded = load_control_vocab(None)
+        self.assertEqual(from_file.sha256, embedded.sha256)
+        self.assertNotEqual(from_file.sha256,
+                            hashlib.sha256(b"embedded").hexdigest())
+
+    def test_vocab_sha256_changes_with_content(self):
+        ref = _REPO_ROOT / "control_vocab_v1.json"
+        data = json.loads(ref.read_text(encoding="utf-8"))
+        data["patterns"] = data["patterns"][:-1]
+        modified = self._write("vocab_modified.json", json.dumps(data))
+        self.assertNotEqual(load_control_vocab(str(modified)).sha256,
+                            load_control_vocab(None).sha256)
 
     def test_custom_vocab_file_overrides_default(self):
         vocab_file = self._write("custom.json", json.dumps({
