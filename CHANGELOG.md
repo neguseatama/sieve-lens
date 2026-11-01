@@ -5,7 +5,7 @@
   declared contract shared by the Sieve tools' JSON gates, with the
   canonical zero-dependency engine `sieve_lens_ext/schema.py` —
   strict JSON layer (duplicate keys, `NaN`/`Infinity`, UTF-8 BOM,
-  1 MiB cap) plus a 11-key mini-validator vocabulary (type / required /
+  1 MiB cap) plus a 12-key mini-validator vocabulary (type / required /
   enum / min / max / min_len / max_len / item_type / item_schema /
   keys / cross / validator; no coercion, unknown keys refused,
   RFC 6901 JSON Pointer errors, recursion bounded by schema depth).
