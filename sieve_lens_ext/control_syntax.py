@@ -87,7 +87,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from sieve_lens_ext.schema import (
+    SchemaError,
+    load_strict_json,
+    validate as validate_schema,
+)
+
 LANE_NAME = "control_syntax"
+
+# Vocab files are tiny overrides; anything over the cap is a mistake and
+# falls back to the embedded default (same 1 MiB cap as Redact's gate).
+_VOCAB_MAX_BYTES = 1048576
 
 # Segment kinds that constitute the content streams of a document
 # (attacker-writable channels). Everything scanned outside backing zones
@@ -192,8 +202,48 @@ _DEFAULT_VOCAB_JSON = """{
 }
 """
 
-_VALID_MATCH = ("literal", "regex")
 _EXCERPT_WINDOW = 30
+
+
+def _non_empty_strings(value) -> None:
+    """Validator hook: every backing kind must be a non-empty string."""
+    if not all(isinstance(k, str) and k for k in value):
+        raise ValueError(
+            "'backing_kinds' items must be non-empty strings")
+
+
+# Contract v1 declaration of the control-vocab document, extracted from
+# the historical hand-rolled checks.  version / lane / description are
+# accepted-if-string (producers emit them; consumers do not read them).
+# Unknown keys are rejected, not ignored (gatekeeper stance, contract
+# v1 rule).
+CONTROL_VOCAB_SCHEMA = {
+    "type": "object",
+    "keys": {
+        "version": {"required": False, "type": "string"},
+        "lane": {"required": False, "type": "string"},
+        "description": {"required": False, "type": "string"},
+        "backing_kinds": {"required": False, "type": "array",
+                          "item_type": "string",
+                          "validator": _non_empty_strings},
+        "patterns": {"required": True, "type": "array", "item_schema": {
+            "type": "object",
+            "keys": {
+                "category": {"required": True, "type": "string",
+                             "min_len": 1},
+                "name": {"required": True, "type": "string",
+                         "min_len": 1},
+                "pattern": {"required": True, "type": "string",
+                            "min_len": 1},
+                "match": {"required": False, "type": "string",
+                          "enum": ["literal", "regex"]},
+                "case_sensitive": {"required": False,
+                                   "type": "boolean"},
+                "description": {"required": False, "type": "string"},
+            },
+        }},
+    },
+}
 
 
 # ----------------------------------------------------------------------
@@ -221,45 +271,48 @@ class ControlVocab:
     source: str           # "embedded" or the vocab file path
 
 
-def _validate_vocab(data, source: str) -> ControlVocab:
-    """Validate a parsed vocab dict and build the frozen ControlVocab."""
-    if not isinstance(data, dict):
-        raise ValueError(f"{source}: vocab must be a JSON object")
-    raw_patterns = data.get("patterns")
-    if not isinstance(raw_patterns, list):
-        raise ValueError(f"{source}: 'patterns' must be a list")
+def validate_control_vocab(data) -> None:
+    """Structural validation of a parsed vocab document (Contract v1).
+
+    Pure check: raises SchemaError (a ValueError) at the first
+    violation with an RFC 6901 JSON Pointer, fills nothing, compiles
+    nothing.  Semantic completion (default filling, regex compilation)
+    happens in :func:`build_control_vocab`.
+    """
+    validate_schema(data, CONTROL_VOCAB_SCHEMA)
+
+
+def build_control_vocab(data, source: str) -> ControlVocab:
+    """Validate and complete a parsed vocab document into a ControlVocab.
+
+    Steps (validate/build separation):
+      1. structural validation via the Contract v1 schema declaration
+      2. default filling: match="literal", case_sensitive=False,
+         description="", backing_kinds=["metadata"]
+      3. regex compilation for match="regex" (semantic; raises
+         ValueError for an invalid pattern)
+      4. content digest — payload construction unchanged, so identical
+         vocab content keeps its identical sha256 across the refactor
+    """
+    try:
+        validate_control_vocab(data)
+    except SchemaError as exc:
+        raise ValueError(f"{source}: {exc}") from exc
 
     raw_backing = data.get("backing_kinds", _DEFAULT_BACKING_KINDS)
-    if not isinstance(raw_backing, list) or not all(
-            isinstance(k, str) and k for k in raw_backing):
-        raise ValueError(f"{source}: 'backing_kinds' must be a list of strings")
-
     specs: List[PatternSpec] = []
-    for idx, raw in enumerate(raw_patterns):
-        where = f"{source}: patterns[{idx}]"
-        if not isinstance(raw, dict):
-            raise ValueError(f"{where} must be an object")
-        for key in ("category", "name", "pattern"):
-            val = raw.get(key)
-            if not isinstance(val, str) or not val:
-                raise ValueError(f"{where}: '{key}' must be a non-empty string")
+    for idx, raw in enumerate(data["patterns"]):
         match = raw.get("match", "literal")
-        if match not in _VALID_MATCH:
-            raise ValueError(
-                f"{where}: 'match' must be one of {_VALID_MATCH}")
         case_sensitive = raw.get("case_sensitive", False)
-        if not isinstance(case_sensitive, bool):
-            raise ValueError(f"{where}: 'case_sensitive' must be a boolean")
         description = raw.get("description", "")
-        if not isinstance(description, str):
-            raise ValueError(f"{where}: 'description' must be a string")
         compiled = None
         if match == "regex":
             flags = 0 if case_sensitive else re.IGNORECASE
             try:
                 compiled = re.compile(raw["pattern"], flags)
             except re.error as exc:
-                raise ValueError(f"{where}: invalid regex: {exc}") from exc
+                raise ValueError(
+                    f"{source}: patterns[{idx}]: invalid regex: {exc}") from exc
         specs.append(PatternSpec(
             category=raw["category"],
             name=raw["name"],
@@ -305,19 +358,22 @@ def load_control_vocab(vocab_path: Optional[str] = None) -> ControlVocab:
 
     House rules (modifier-vocab convention): without a path, the embedded
     default vocab is used. A missing, unreadable, or invalid-JSON file
-    falls back to the embedded default. A valid JSON file with an explicit
-    empty "patterns" list is honored (0 patterns). Malformed but parseable
-    vocabularies raise ValueError.
+    falls back to the embedded default — invalid-JSON now includes the
+    Contract v1 JSON-layer violations (duplicate keys, NaN/Infinity,
+    a UTF-8 BOM, files over the 1 MiB cap), which raise StrictJSONError,
+    a json.JSONDecodeError subclass. A valid JSON file with an explicit
+    empty "patterns" list is honored (0 patterns). Files that parse but
+    violate the Contract v1 schema raise ValueError.
     """
     if vocab_path:
         path = Path(vocab_path)
         try:
-            source = path.read_text(encoding="utf-8")
-            data = json.loads(source)
-            return _validate_vocab(data, str(path))
+            text = path.read_text(encoding="utf-8")
+            data = load_strict_json(text, max_bytes=_VOCAB_MAX_BYTES)
+            return build_control_vocab(data, str(path))
         except (OSError, json.JSONDecodeError):
             pass  # fall back to the embedded default
-    return _validate_vocab(json.loads(_DEFAULT_VOCAB_JSON), "embedded")
+    return build_control_vocab(json.loads(_DEFAULT_VOCAB_JSON), "embedded")
 
 
 # ----------------------------------------------------------------------

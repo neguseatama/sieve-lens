@@ -118,6 +118,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
+from sieve_lens_ext.schema import (
+    SchemaError,
+    load_strict_json,
+    validate as validate_schema,
+)
+
 try:
     import tinycss2
     from tinycss2.ast import Declaration, QualifiedRule
@@ -162,6 +168,28 @@ _THRESHOLD_BOUNDS = {
     "pdf_font_size_pt_max": (0.0, 10.0),
 }
 
+# Threshold files are tiny overrides; anything over the cap is a mistake
+# and falls back to the embedded defaults (same cap as the vocab gate).
+_THRESHOLDS_MAX_BYTES = 1048576
+
+# Contract v1 declaration, generated from the single bounds table above.
+# All five threshold keys are required and unknown keys are rejected,
+# which reproduces the historical "exactly these keys" set equality.
+# version / lane / description are accepted-if-string (producers emit
+# them; consumers do not read them) — mirrors the control-vocab schema.
+GEOMETRY_THRESHOLDS_SCHEMA = {
+    "type": "object",
+    "keys": {
+        "version": {"required": False, "type": "string"},
+        "lane": {"required": False, "type": "string"},
+        "description": {"required": False, "type": "string"},
+        "thresholds": {"required": True, "type": "object", "keys": {
+            key: {"type": "number", "min": lo, "max": hi}
+            for key, (lo, hi) in _THRESHOLD_BOUNDS.items()
+        }},
+    },
+}
+
 _SCALE_FUNC = re.compile(
     r"(?P<fn>scale[xyz]?|scale3d)\s*\((?P<args>[^)]*)\)", re.IGNORECASE
 )
@@ -203,30 +231,32 @@ def _thresholds_digest(values: Dict[str, float]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _validate_thresholds(data, source: str) -> Thresholds:
-    """Validate a parsed thresholds document; raises ValueError if malformed."""
-    if not isinstance(data, dict):
-        raise ValueError(f"{source}: thresholds document must be a JSON object")
-    raw = data.get("thresholds")
-    if not isinstance(raw, dict):
-        raise ValueError(f"{source}: 'thresholds' must be an object")
-    if set(raw) != set(_THRESHOLD_KEYS):
-        raise ValueError(
-            f"{source}: 'thresholds' must have exactly the keys "
-            f"{list(_THRESHOLD_KEYS)} (got {sorted(raw)})")
-    values: Dict[str, float] = {}
-    for key in _THRESHOLD_KEYS:
-        val = raw[key]
-        if isinstance(val, bool) or not isinstance(val, (int, float)):
-            raise ValueError(f"{source}: '{key}' must be a number")
-        val = float(val)
-        if val != val or val in (float("inf"), float("-inf")):
-            raise ValueError(f"{source}: '{key}' must be finite")
-        lo, hi = _THRESHOLD_BOUNDS[key]
-        if not (lo <= val <= hi):
-            raise ValueError(
-                f"{source}: '{key}' must be within [{lo}, {hi}] (got {val})")
-        values[key] = val
+def validate_thresholds(data) -> None:
+    """Structural validation of a parsed thresholds document (Contract v1).
+
+    Pure check: raises SchemaError (a ValueError) at the first violation
+    with an RFC 6901 JSON Pointer.  All five keys are required, unknown
+    keys are rejected, and min/max are inclusive and NaN-safe (so a
+    value like 1e400, which parses to inf, is refused by ``max``).
+    """
+    validate_schema(data, GEOMETRY_THRESHOLDS_SCHEMA)
+
+
+def build_thresholds(data, source: str) -> Thresholds:
+    """Validate and complete a parsed thresholds document.
+
+    Steps (validate/build separation): structural validation via the
+    Contract v1 schema declaration, then float normalization and the
+    content digest — payload construction unchanged, so identical
+    threshold content keeps its identical sha256 across the refactor.
+    """
+    try:
+        validate_thresholds(data)
+    except SchemaError as exc:
+        raise ValueError(f"{source}: {exc}") from exc
+    raw = data["thresholds"]
+    values: Dict[str, float] = {key: float(raw[key])
+                                for key in _THRESHOLD_KEYS}
     return Thresholds(sha256=_thresholds_digest(values), source=source,
                       **values)
 
@@ -236,20 +266,24 @@ def load_thresholds(thresholds_path: Optional[str] = None) -> Thresholds:
 
     House rules (control-vocab convention): without a path, the embedded
     defaults are used. A missing, unreadable, or invalid-JSON file falls
-    back to the embedded defaults. A parseable-but-malformed file raises
+    back to the embedded defaults — invalid-JSON now includes the
+    Contract v1 JSON-layer violations (duplicate keys, NaN/Infinity, a
+    UTF-8 BOM, files over the 1 MiB cap), which raise StrictJSONError, a
+    json.JSONDecodeError subclass. A parseable-but-malformed file raises
     ValueError. The sha256 digests the threshold content, so identical
     content yields the same digest from any path.
     """
     if thresholds_path:
         path = Path(thresholds_path)
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            data = load_strict_json(text, max_bytes=_THRESHOLDS_MAX_BYTES)
         except (OSError, json.JSONDecodeError):
             pass  # fall back to the embedded defaults
         else:
-            return _validate_thresholds(data, str(path))
-    return _validate_thresholds(json.loads(_DEFAULT_THRESHOLDS_JSON),
-                                "embedded")
+            return build_thresholds(data, str(path))
+    return build_thresholds(json.loads(_DEFAULT_THRESHOLDS_JSON),
+                            "embedded")
 
 
 # ----------------------------------------------------------------------
