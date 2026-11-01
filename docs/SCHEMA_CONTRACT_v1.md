@@ -77,7 +77,7 @@ scalar node : {"type": "string"|"integer"|"number"|"boolean"|"null",
                "min_len"?: n, "max_len"?: n}
 ```
 
-Vocabulary (11 spec keys, all fail-closed — an unknown spec key is an
+Vocabulary (12 spec keys, all fail-closed — an unknown spec key is an
 authoring error):
 
 | Key | Applies to | Semantics |
