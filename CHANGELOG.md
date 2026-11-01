@@ -1,3 +1,46 @@
+## [0.18.0] - 2026-11-01
+
+### Added
+- **Sieve Schema Contract v1** (`docs/SCHEMA_CONTRACT_v1.md`): the
+  declared contract shared by the Sieve tools' JSON gates, with the
+  canonical zero-dependency engine `sieve_lens_ext/schema.py` —
+  strict JSON layer (duplicate keys, `NaN`/`Infinity`, UTF-8 BOM,
+  1 MiB cap) plus a 11-key mini-validator vocabulary (type / required /
+  enum / min / max / min_len / max_len / item_type / item_schema /
+  keys / cross / validator; no coercion, unknown keys refused,
+  RFC 6901 JSON Pointer errors, recursion bounded by schema depth).
+- **Conformance corpus**: 44 accept/reject cases
+  (`tests/corpus/schema_contract_v1.json`) pinning the contract,
+  replicated into the Redact and Crowd test suites with a sha256 pin
+  (sieve-tray vendor-sync precedent).
+
+### Changed
+- **validate/build separation**: the control-vocab and
+  geometry-threshold gates now split into a pure `validate_*`
+  (structural check, `SchemaError` with a JSON Pointer) and a
+  `build_*` step (default filling, regex compilation, content
+  digest). `_validate_vocab`/`_validate_thresholds` are replaced by
+  `validate_control_vocab`/`build_control_vocab` and
+  `validate_thresholds`/`build_thresholds`.
+- **Gatekeeper behavior changes** (documented in README known
+  limitation 14): unknown keys in vocab/threshold documents are
+  refused instead of silently ignored, `version`/`lane` must be
+  strings when present, and duplicate keys / `NaN` / `Infinity` in
+  vocab/threshold files now fall back to the embedded defaults
+  instead of being accepted (last-wins) or raising.
+- **Receipt non-destruction**: the embedded vocab and thresholds
+  content digests are unchanged by the refactor
+  (`27734e17…6fbf`, `70f2bdb5…4540`, pinned in tests), so receipts
+  recorded before v0.18.0 stay reproducible.
+
+### Tests
+- 254 → 292 (+38): corpus runner (integrity pin, JSON layer, schema
+  layer with pointer pins, engine pins for bounded recursion,
+  iterative arrays, NaN fail-closed, validator hooks) and gate
+  integration tests (digest non-destruction, JSON-layer fallbacks,
+  gatekeeper refusals, validate/build separation, schema
+  self-conformance).
+
 ## [0.17.0] - 2026-10-31
 
 ### Added

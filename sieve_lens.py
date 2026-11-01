@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 
 
 # ----------------------------------------------------------------------

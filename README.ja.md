@@ -220,6 +220,34 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
 
+## 📋 Sieve Schema Contract v1 (v0.18.0)
+
+Sieve シリーズの JSON ゲートはすべて、宣言済みの単一契約を共有します
+(`docs/SCHEMA_CONTRACT_v1.md`・正本実装 `sieve_lens_ext/schema.py`):
+
+- **厳格 JSON 層** — オブジェクト内の重複キー・`NaN`/`Infinity`・
+  UTF-8 BOM・1 MiB 超の入力を拒否します。Lens の語彙/閾値ローダでは
+  「拒否」= 文書化済みの内蔵デフォルトへのフォールバックです
+  (レシートの `vocab_source`/sha256 で確認できます)
+- **宣言スキーマ** — 制御語彙文書・幾何閾値文書は明示的なスキーマ宣言
+  (`CONTROL_VOCAB_SCHEMA`, `GEOMETRY_THRESHOLDS_SCHEMA`) で検証し、
+  純粋な `validate_*` (構造検証・RFC 6901 JSON Pointer 付きエラー) と
+  `build_*` (デフォルト補完・regex コンパイル) に分離しました
+- **ゲートキーパー原則** — 未知キーは無視せず拒否します
+  (挙動変更: 誤型の `version`/`lane` や未知フィールドは、黙ってスキップ
+  される代わりに `ValueError` を送出します)
+- **レシート非破壊** — 内蔵語彙・閾値の内容ダイジェストはリファクタで
+  不変です (テストで pin)。v0.18.0 より前に記録されたレシートも
+  再現できます
+- **適合コーパス** — 44 の受理/拒否ケース
+  (`tests/corpus/schema_contract_v1.json`) が契約を pin し、Redact・
+  Crowd のテストスイート内の複製は sha256 で pin されています
+- **有界な検証** — 再帰はスキーマ深さのみを追い、入力の深さには依存
+  しません。5 万段の深い文書は根元近くで拒否され、10 万要素の配列は
+  反復で検査されます
+
+---
+
 ## 🔗 Redact Bridge(v0.12.0)
 
 `sieve_lens_ext.redact_bridge` が観測目録(JSON)を出力し、Sieve Redact が
@@ -301,6 +329,12 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
    テキスト空間のオペランドを対象とし、相対移動(`Td`/`TD`/`T*`/`TL`
    の累積)やグラフィックス CTM(`cm`)は位置に合成しません。
    背景同色の塗り(観測コストが最大)は将来の語彙です。
+
+14. **スキーマゲートは未知キーを拒否。** 制御語彙文書・幾何閾値文書は、
+   Contract v1 外のフィールドを無視せず拒否します。将来のプロデューサは
+   契約を明示的に拡張してください。語彙・閾値ファイル内の重複キー /
+   `NaN` / `Infinity` は、last-wins で受理される代わりに内蔵デフォルトへ
+   フォールバックします。
 
 ---
 

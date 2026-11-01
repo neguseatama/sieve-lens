@@ -225,6 +225,36 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ---
 
+## 📋 Sieve Schema Contract v1 (v0.18.0)
+
+All JSON gates in the Sieve tools share one declared contract
+(`docs/SCHEMA_CONTRACT_v1.md`, canonical engine
+`sieve_lens_ext/schema.py`):
+
+- **Strict JSON layer** — duplicate object keys, `NaN`/`Infinity`, a
+  UTF-8 BOM and files over the 1 MiB cap are refused; for the Lens
+  vocab/thresholds loaders "refused" means the documented fallback to
+  the embedded defaults (the receipt's `vocab_source`/sha256 shows it)
+- **Declared schemas** — the control-vocab and geometry-threshold
+  documents are validated against explicit schema declarations
+  (`CONTROL_VOCAB_SCHEMA`, `GEOMETRY_THRESHOLDS_SCHEMA`), separated
+  into a pure `validate_*` (structure, RFC 6901 JSON Pointer errors)
+  and a `build_*` step (default filling, regex compilation)
+- **Gatekeeper stance** — unknown keys are refused, not ignored
+  (behavior change: mistyped `version`/`lane` values and unknown
+  fields now raise `ValueError` instead of being silently skipped)
+- **Receipt non-destruction** — the content digests of the embedded
+  vocab and thresholds are unchanged by the refactor (pinned in
+  tests), so every receipt recorded before v0.18.0 stays reproducible
+- **Conformance corpus** — 44 accept/reject cases
+  (`tests/corpus/schema_contract_v1.json`) pin the contract; replicas
+  in the Redact and Crowd test suites are pinned by sha256
+- **Bounded validation** — recursion follows the schema depth only,
+  never the input depth; a 50,000-deep document is refused near the
+  root, a 100,000-item array is checked iteratively
+
+---
+
 ## 🔗 Redact Bridge (v0.12.0)
 
 `sieve_lens_ext.redact_bridge` exports an observation catalog that
@@ -315,6 +345,13 @@ domain of **machine-readable vs. human-visible divergence**.
    (`Td`/`TD`/`T*`/`TL` accumulation) and the graphics CTM (`cm`) are
    not composed into the position, and same-color-as-background fills
    are not observed (future vocabulary).
+
+14. **Schema gates refuse unknown keys.** The control-vocab and
+   geometry-threshold documents reject fields outside Contract v1
+   instead of ignoring them; a future producer must extend the
+   contract explicitly. Duplicate keys / `NaN` / `Infinity` in vocab
+   or thresholds files now fall back to the embedded defaults instead
+   of being accepted with last-wins semantics.
 
 ---
 
