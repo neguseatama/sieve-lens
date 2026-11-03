@@ -1,3 +1,5 @@
+# Changelog
+
 ## [0.19.0] - 2026-11-03
 
 ### Added
@@ -202,7 +204,6 @@
 - Repository hygiene: the local virtualenv and audit artifacts are no longer
   tracked.
 
-# Changelog
 
 ## [0.11.0] - 2026-10-06
 
