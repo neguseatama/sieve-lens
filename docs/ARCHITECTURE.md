@@ -1,4 +1,4 @@
-# 🏛️ Sieve Lens v0 Architecture Specification
+# 🏛️ Sieve Lens Architecture Specification
 
 ## Pipeline Overview
 
@@ -23,6 +23,10 @@ v
 |
 v
 [ Observation Report ]
+
+(H8 note: the geometry lane is an *optional extension lane* that runs
+ beside this pipeline and emits its own receipt — it is **not** part
+ of the 7-bit mask; installing it leaves H1-H7 semantics unchanged.)
 
 
 ---
@@ -95,8 +99,8 @@ The distinction is intentional. It preserves:
 
 | Boundary | Reason |
 |----------|--------|
-| PDF not supported | Standard library cannot parse PDF reliably |
-| Images not supported | OCR is out of scope for v0 |
-| External CSS not resolved | Requires CSS cascade, out of scope |
+| PDF via optional extension | `sieve_lens_ext/pdf.py` reads through `pypdf` (pip extra `pdf`); the core engine stays zero-dependency, and extensions read through their own libraries outside the core's bounded reading (L1 — future L2/L3 scope) |
+| Images / OCR via optional extensions | `sieve_lens_ext/image_layers.py` (Pillow) and `sieve_lens_ext/ocr.py` (pytesseract) — pip extras `pdf-images` / `ocr`; OCR quality depends on the locally installed language packs |
+| External CSS: local files only | The core H4 lane inspects inline CSS only; the optional `html-css` extensions resolve `<style>` blocks and *local* `<link>` stylesheets — remote resources are never fetched (offline principle) |
 | Semantic intent not evaluated | Requires language understanding |
 | Character tables fixed | New techniques require code update |
