@@ -255,6 +255,7 @@ def _make_form_tree_pdf(path, body="", tree=None, draw=()):
         writer.write(f)
 
 
+@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
 class TestPdfFormText(unittest.TestCase):
     """Form-internal Tr 3 text is currently reported only as visible body
     (H4 false negative). These tests fail before the bounded form walk
@@ -322,6 +323,7 @@ class TestPdfFormText(unittest.TestCase):
         self.assertTrue(any("/Fur0" in e for e in obs.evidence["H4"]))
 
 
+@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
 class TestPdfFormWalk(unittest.TestCase):
     """GREEN-phase pins for the bounded Form walk (v0.15)."""
 
