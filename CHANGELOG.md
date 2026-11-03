@@ -1,3 +1,61 @@
+## [0.19.0] - 2026-11-03
+
+### Added
+- **Bounded document reading (L1: safe reading)**: `ReadLimits`, a
+  frozen dataclass pinning five positive-integer budgets —
+  `max_file_bytes` 64 MiB, `max_entries` 10000, `max_part_bytes` 32 MiB,
+  `max_total_bytes` 128 MiB, `max_elements` 1000000 — with
+  `SieveLensEngine(read_limits=...)` as an optional override; existing
+  calls construct the defaults unchanged. Every value must be a
+  positive integer (`ValueError` otherwise).
+- **Closed-set refusals**: `ExtractionRefused` carries a `code` from
+  `REFUSAL_CODES` — 12 codes: `not_regular_file`, `file_too_large`,
+  `too_many_entries`, `part_too_large`, `total_too_large`,
+  `too_many_elements`, `doctype_not_allowed`, `unsupported_encoding`,
+  `duplicate_part`, `encrypted`, `malformed_xml`, `main_part_missing`.
+  `observe()` turns a refusal into a null observation with evidence
+  `Extraction refused: <code>` (H1 = 0, mask `0000-000`). Refusal
+  evidence carries the code only — never part names, document content,
+  or paths.
+
+### Changed
+- **.docx reading is bounded and pre-checked**: regular-file/size
+  gate, entry-count and case-insensitive duplicate-part refusals,
+  per-part encrypted-flag and declared-size checks, chunked
+  decompression capped at `max_part_bytes`, per-call total budget,
+  pre-parse refusal of UTF-16/DOCTYPE/ENTITY and of parts beyond
+  `max_elements`, and `ET.fromstring` on bounded bytes only. An
+  unreadable read-part is now `malformed_xml` and a missing
+  `word/document.xml` is `main_part_missing` (H1 = 0) instead of a
+  silent empty result behind "parsed successfully"; absent optional
+  parts stay normal.
+- **.txt/.md/.html/.htm reading is gated**: `os.stat` gate (regular
+  file, `max_file_bytes`) before a bounded text-mode read that keeps
+  universal-newline translation identical to `read_text`.
+
+### Security / Non-destruction
+- Zip bombs (including lying declared sizes) are refused bounded —
+  memory stays capped with H1 = 0; billion-laughs and external
+  entities are refused unexpanded; UTF-16 documents are refused before
+  decoding.
+- Receipts and reports recorded before v0.19.0 stay reproducible:
+  accepted inputs are byte-identical to v0.18.0 (pinned in tests),
+  the embedded vocab/thresholds content digests are unchanged
+  (`27734e17…6fbf`, `70f2bdb5…4540`), the conformance corpus is
+  unchanged, and the frozen files (`schema.py`, `control_syntax.py`,
+  `geometry.py`, `redact_bridge.py`) are untouched.
+- Zero new dependencies (`os`/`stat` are stdlib).
+
+### Tests
+- 292 → 353 (+61): L1-T01..T12 — ReadLimits defaults/frozenness/
+  validation, byte-identity pins on accepted inputs, zip-bomb and
+  lying-size boundedness (tracemalloc), file/entries/total/element
+  limits, DOCTYPE/ENTITY/encoding refusals, duplicate and encrypted
+  parts, unreadable-vs-absent parts, .txt/.md/.html gates and CRLF
+  identity, refusal-evidence hygiene, digest/corpus/frozen-file pins,
+  and the 0.19.0 version assertion. Existing tests are unchanged
+  except where the request's §5.1 allows it.
+
 ## [0.18.0] - 2026-11-01
 
 ### Added
