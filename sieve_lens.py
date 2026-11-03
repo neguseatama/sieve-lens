@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import html
 import html.parser
+import os
 import re
+import stat
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
@@ -77,6 +79,68 @@ class Observation:
     segments: List[Segment] = field(default_factory=list)
     evidence: Dict[str, List[str]] = field(default_factory=dict)
     diagnostics: Dict[str, object] = field(default_factory=dict)
+
+
+# ----------------------------------------------------------------------
+# 2.5 Reading limits and refusals (L1: safe reading)
+# ----------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ReadLimits:
+    """Immutable bounds for document reading (v0.19.0, L1).
+
+    Every value must be a positive integer. Limits are reading policy,
+    not judgment: an input beyond a limit is refused with a closed-set
+    code (see ``ExtractionRefused``) instead of being read unbounded.
+    Accepted inputs are observed exactly as before.
+    """
+
+    max_file_bytes: int = 64 * 1024 * 1024    # whole input file
+    max_entries: int = 10_000                 # zip entry count
+    max_part_bytes: int = 32 * 1024 * 1024    # one expanded part
+    max_total_bytes: int = 128 * 1024 * 1024  # expanded parts, summed
+    max_elements: int = 1_000_000             # '<' bytes per XML part
+
+    def __post_init__(self):
+        for name in ("max_file_bytes", "max_entries", "max_part_bytes",
+                     "max_total_bytes", "max_elements"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) \
+                    or value <= 0:
+                raise ValueError(
+                    f"ReadLimits.{name} must be a positive integer, "
+                    f"got {value!r}")
+
+
+REFUSAL_CODES = frozenset({
+    "not_regular_file",     # FIFO, device, directory, ...
+    "file_too_large",       # beyond max_file_bytes
+    "too_many_entries",     # zip entries beyond max_entries
+    "part_too_large",       # one part beyond max_part_bytes
+    "total_too_large",      # expanded parts beyond max_total_bytes
+    "too_many_elements",    # '<' bytes beyond max_elements
+    "doctype_not_allowed",  # <!DOCTYPE or <!ENTITY in an XML part
+    "unsupported_encoding", # UTF-16 BOM or a non-UTF-8 XML declaration
+    "duplicate_part",       # same (case-insensitive) part name twice
+    "encrypted",            # encrypted flag on a part we would read
+    "malformed_xml",        # a read part is not well-formed
+    "main_part_missing",    # word/document.xml absent
+})
+
+
+class ExtractionRefused(Exception):
+    """Raised by the core extractors when reading is refused (L1).
+
+    This is an observation, not a judgment: ``code`` is one of the
+    closed set ``REFUSAL_CODES`` and evidence strings carry the code
+    only — never part names, document content, or paths.
+    """
+
+    def __init__(self, code: str):
+        if code not in REFUSAL_CODES:
+            raise ValueError(f"unknown refusal code: {code!r}")
+        super().__init__(code)
+        self.code = code
 
 
 # ----------------------------------------------------------------------
@@ -180,9 +244,122 @@ class _Extractor(Extractor):
     pass
 
 
+def _resolve_limits(read_limits: Optional[ReadLimits]) -> ReadLimits:
+    return read_limits if read_limits is not None else ReadLimits()
+
+
+def _check_regular_file_size(path: Path, limits: ReadLimits) -> None:
+    """Refuse non-regular files and oversized inputs before opening.
+
+    os.stat never opens the path, so a FIFO or device is refused
+    without waiting for bytes that may never come.
+    """
+    st = os.stat(path)
+    if not stat.S_ISREG(st.st_mode):
+        raise ExtractionRefused("not_regular_file")
+    if st.st_size > limits.max_file_bytes:
+        raise ExtractionRefused("file_too_large")
+
+
+def _read_text_bounded(path: Path, limits: ReadLimits) -> str:
+    """Read a UTF-8 text document exactly like read_text, bounded.
+
+    Text mode keeps universal-newline translation (\\r\\n -> \\n), so an
+    accepted input yields the very same text that
+    ``path.read_text(encoding="utf-8", errors="replace")`` returns.
+    With ``errors="replace"`` one byte decodes to at most one character,
+    so a character count above the limit implies a byte count above it.
+    """
+    _check_regular_file_size(path, limits)
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read(limits.max_file_bytes + 1)
+    if len(text) > limits.max_file_bytes:
+        raise ExtractionRefused("file_too_large")
+    return text
+
+
+_XML_DECL_ENCODING_RE = re.compile(
+    rb"^<\?xml\s[^>]*?encoding\s*=\s*[\"']([^\"']+)[\"']")
+
+
+def _check_xml_bytes(data: bytes, limits: ReadLimits) -> None:
+    """Static checks on a bounded XML part, before parsing (L1).
+
+    UTF-16 is refused so that the '<' approximation and the DOCTYPE
+    scan stay exact for UTF-8, which every OOXML generator in practice
+    emits. Entities are refused outright (an OOXML part carries no
+    DOCTYPE), so entity expansion never runs at all.
+    """
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        raise ExtractionRefused("unsupported_encoding")
+    head = data[3:] if data.startswith(b"\xef\xbb\xbf") else data
+    m = _XML_DECL_ENCODING_RE.match(head)
+    if m:
+        declared = m.group(1).decode("ascii", "replace").strip().lower()
+        if declared not in ("utf-8", "utf8"):
+            raise ExtractionRefused("unsupported_encoding")
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise ExtractionRefused("doctype_not_allowed")
+    if data.count(b"<") > limits.max_elements:
+        raise ExtractionRefused("too_many_elements")
+
+
+def _parse_bounded_xml(data: bytes):
+    """Parse bytes that already passed the bounded checks.
+
+    A part that fails to parse is an observation, not an empty result:
+    the refusal keeps H1 at 0 instead of reporting 'parsed
+    successfully' over a part Lens cannot actually read.
+    """
+    try:
+        return ET.fromstring(data)
+    except (ET.ParseError, ValueError):
+        raise ExtractionRefused("malformed_xml")
+
+
+def _read_zip_part(zf, name: str, limits: ReadLimits,
+                   budget: Dict[str, int]) -> Optional[bytes]:
+    """Read one zip part under the L1 bounds.
+
+    Returns None when the part is absent (an optional part); raises
+    ExtractionRefused when reading is refused. The declared size is
+    not trusted: the decompressed read stops at max_part_bytes, and it
+    is read in chunks so a refused part never materializes in memory
+    past roughly the limit plus one chunk.
+    """
+    try:
+        info = zf.getinfo(name)
+    except KeyError:
+        return None
+    if info.flag_bits & 0x1:
+        raise ExtractionRefused("encrypted")
+    if info.file_size > limits.max_part_bytes:
+        raise ExtractionRefused("part_too_large")
+    chunks: List[bytes] = []
+    total = 0
+    with zf.open(name) as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limits.max_part_bytes:
+                raise ExtractionRefused("part_too_large")
+            chunks.append(chunk)
+    data = b"".join(chunks)
+    budget["total"] += len(data)
+    if budget["total"] > limits.max_total_bytes:
+        raise ExtractionRefused("total_too_large")
+    _check_xml_bytes(data, limits)
+    return data
+
+
 class _PlainTextExtractor(_Extractor):
+    def __init__(self, read_limits: Optional[ReadLimits] = None):
+        self.read_limits = read_limits
+
     def extract(self, path: Path) -> List[Segment]:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = _read_text_bounded(path, _resolve_limits(self.read_limits))
         text = strip_leading_bom(text)
         return [Segment(text=text, visible=True, kind="body")]
 
@@ -207,15 +384,16 @@ _VOID_ELEMENTS = frozenset({
 
 
 class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
-    def __init__(self):
+    def __init__(self, read_limits: Optional[ReadLimits] = None):
         super().__init__(convert_charrefs=True)
+        self.read_limits = read_limits
         self.segments: List[Segment] = []
         self._stack: List[Tuple[str, bool]] = []
         self._buffer: List[str] = []
         self._in_style_or_script = False
 
     def extract(self, path: Path) -> List[Segment]:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = _read_text_bounded(path, _resolve_limits(self.read_limits))
         text = strip_leading_bom(text)
         self._reset()
         self.feed(text)
@@ -304,51 +482,63 @@ def _dc(tag): return f"{{{_DC_NS}}}{tag}"
 
 
 class _DocxExtractor(_Extractor):
+    def __init__(self, read_limits: Optional[ReadLimits] = None):
+        self.read_limits = read_limits
+
     def extract(self, path: Path) -> List[Segment]:
+        limits = _resolve_limits(self.read_limits)
+        _check_regular_file_size(path, limits)
         segments: List[Segment] = []
         with zipfile.ZipFile(path) as zf:
-            segments.extend(self._extract_body(zf))
-            segments.extend(self._extract_headers_footers(zf))
-            segments.extend(self._extract_footnotes(zf))
-            segments.extend(self._extract_comments(zf))
-            segments.extend(self._extract_core_props(zf))
+            infos = zf.infolist()
+            if len(infos) > limits.max_entries:
+                raise ExtractionRefused("too_many_entries")
+            seen = set()
+            for info in infos:
+                lowered = info.filename.lower()
+                if lowered in seen:
+                    raise ExtractionRefused("duplicate_part")
+                seen.add(lowered)
+            budget = {"total": 0}
+            doc = _read_zip_part(zf, "word/document.xml", limits, budget)
+            if doc is None:
+                raise ExtractionRefused("main_part_missing")
+            root = _parse_bounded_xml(doc)
+            segments.extend(self._paragraph_segments(
+                root, kind="body", visible=True,
+                location_prefix="paragraph"))
+            segments.extend(self._headers_footers(zf, limits, budget))
+            segments.extend(self._notes(zf, limits, budget))
+            segments.extend(self._comments_part(zf, limits, budget))
+            segments.extend(self._core_props_part(zf, limits, budget))
         return segments
 
-    def _extract_body(self, zf) -> List[Segment]:
-        return self._extract_paragraphs(
-            zf, "word/document.xml", kind="body", visible=True,
-            location_prefix="paragraph",
-        )
-
-    def _extract_headers_footers(self, zf) -> List[Segment]:
+    def _headers_footers(self, zf, limits, budget) -> List[Segment]:
         segments = []
         for name in sorted(zf.namelist()):
             if name.startswith("word/header") and name.endswith(".xml"):
                 label = name.replace("word/", "").replace(".xml", "")
-                segments.extend(self._extract_paragraphs(
-                    zf, name, kind="header_footer", visible=True,
-                    location_prefix=label,
-                ))
+                segments.extend(self._segments_from_part(
+                    zf, name, limits, budget, kind="header_footer",
+                    visible=True, location_prefix=label))
             elif name.startswith("word/footer") and name.endswith(".xml"):
                 label = name.replace("word/", "").replace(".xml", "")
-                segments.extend(self._extract_paragraphs(
-                    zf, name, kind="header_footer", visible=True,
-                    location_prefix=label,
-                ))
+                segments.extend(self._segments_from_part(
+                    zf, name, limits, budget, kind="header_footer",
+                    visible=True, location_prefix=label))
         return segments
 
-    def _extract_footnotes(self, zf) -> List[Segment]:
+    def _notes(self, zf, limits, budget) -> List[Segment]:
         segments = []
         for part, label, tag in (
             ("word/footnotes.xml", "footnote", "footnote"),
             ("word/endnotes.xml", "endnote", "endnote"),
         ):
-            try:
-                with zf.open(part) as f:
-                    tree = ET.parse(f)
-            except (KeyError, ET.ParseError):
+            data = _read_zip_part(zf, part, limits, budget)
+            if data is None:
                 continue
-            for idx, note in enumerate(tree.getroot().iter(_w(tag)), start=1):
+            root = _parse_bounded_xml(data)
+            for idx, note in enumerate(root.iter(_w(tag)), start=1):
                 if note.get(_w("type")):
                     continue
                 texts = [(t.text or "") for t in note.iter(_w("t"))]
@@ -362,14 +552,13 @@ class _DocxExtractor(_Extractor):
                     ))
         return segments
 
-    def _extract_comments(self, zf) -> List[Segment]:
-        try:
-            with zf.open("word/comments.xml") as f:
-                tree = ET.parse(f)
-        except (KeyError, ET.ParseError):
+    def _comments_part(self, zf, limits, budget) -> List[Segment]:
+        data = _read_zip_part(zf, "word/comments.xml", limits, budget)
+        if data is None:
             return []
+        root = _parse_bounded_xml(data)
         segments = []
-        for idx, comment in enumerate(tree.getroot().iter(_w("comment")), start=1):
+        for idx, comment in enumerate(root.iter(_w("comment")), start=1):
             texts = [(t.text or "") for t in comment.iter(_w("t"))]
             text = "".join(texts).strip()
             if len(text) >= 10:
@@ -379,17 +568,16 @@ class _DocxExtractor(_Extractor):
                 ))
         return segments
 
-    def _extract_core_props(self, zf) -> List[Segment]:
-        try:
-            with zf.open("docProps/core.xml") as f:
-                tree = ET.parse(f)
-        except (KeyError, ET.ParseError):
+    def _core_props_part(self, zf, limits, budget) -> List[Segment]:
+        data = _read_zip_part(zf, "docProps/core.xml", limits, budget)
+        if data is None:
             return []
+        root = _parse_bounded_xml(data)
         segments = []
         for tag, label in ((_dc("subject"), "dc:subject"),
                            (_dc("description"), "dc:description"),
                            (_cp("keywords"), "cp:keywords")):
-            for elem in tree.getroot().iter(tag):
+            for elem in root.iter(tag):
                 val = (elem.text or "").strip()
                 if len(val) >= 10:
                     segments.append(Segment(
@@ -398,16 +586,22 @@ class _DocxExtractor(_Extractor):
                     ))
         return segments
 
-    def _extract_paragraphs(
-        self, zf, part: str, kind: str, visible: bool, location_prefix: str
-    ) -> List[Segment]:
-        try:
-            with zf.open(part) as f:
-                tree = ET.parse(f)
-        except (KeyError, ET.ParseError):
+    def _segments_from_part(self, zf, name, limits, budget, kind: str,
+                            visible: bool,
+                            location_prefix: str) -> List[Segment]:
+        data = _read_zip_part(zf, name, limits, budget)
+        if data is None:
             return []
+        root = _parse_bounded_xml(data)
+        return self._paragraph_segments(
+            root, kind=kind, visible=visible,
+            location_prefix=location_prefix)
+
+    @staticmethod
+    def _paragraph_segments(root, kind: str, visible: bool,
+                            location_prefix: str) -> List[Segment]:
         segments = []
-        for idx, para in enumerate(tree.getroot().iter(_w("p")), start=1):
+        for idx, para in enumerate(root.iter(_w("p")), start=1):
             texts = [(t.text or "") for t in para.iter(_w("t"))]
             text = "".join(texts)
             if text.strip():
@@ -430,16 +624,19 @@ class SieveLensEngine:
         zero_width_density_threshold: float = 0.01,
         payload_min_length: int = 16,
         oob_min_length: int = 10,
+        read_limits: Optional[ReadLimits] = None,
     ):
         self.zero_width_density_threshold = zero_width_density_threshold
         self.payload_min_length = payload_min_length
         self.oob_min_length = oob_min_length
+        self.read_limits = (
+            read_limits if read_limits is not None else ReadLimits())
         self._extractors: Dict[str, _Extractor] = {
-            ".txt": _PlainTextExtractor(),
-            ".md": _PlainTextExtractor(),
-            ".html": _HtmlExtractor(),
-            ".htm": _HtmlExtractor(),
-            ".docx": _DocxExtractor(),
+            ".txt": _PlainTextExtractor(self.read_limits),
+            ".md": _PlainTextExtractor(self.read_limits),
+            ".html": _HtmlExtractor(self.read_limits),
+            ".htm": _HtmlExtractor(self.read_limits),
+            ".docx": _DocxExtractor(self.read_limits),
         }
 
     def get_extractor(self, extension: str) -> Optional[Extractor]:
@@ -470,8 +667,12 @@ class SieveLensEngine:
             return self._null_observation(str(path), f"Unsupported format: {path.suffix}")
         try:
             segments = extractor.extract(path)
+        except ExtractionRefused as e:
+            return self._null_observation(
+                str(path), f"Extraction refused: {e.code}")
         except Exception as e:
-            return self._null_observation(str(path), f"Extraction failed: {type(e).__name__}")
+            return self._null_observation(
+                str(path), f"Extraction failed: {type(e).__name__}")
         return self._analyze(segments, source=str(path))
 
     def observe_text(self, text: str) -> Observation:
@@ -896,6 +1097,8 @@ __all__ = [
     "Observation",
     "Segment",
     "Extractor",
+    "ReadLimits",
+    "ExtractionRefused",
     "format_report",
     "format_report_html",
     "write_report_html",
