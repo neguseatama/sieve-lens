@@ -140,6 +140,20 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   defaults apply unless a file override is given). The receipt records
   rule, raw value, measured number, threshold, and position - facts
   only, no intent judgment.
+- **Bounded document reading (L1: safe reading)** (since v0.19)  
+  The core reading paths (`.txt` / `.md` / `.html` / `.htm` / `.docx`)
+  are guarded by `ReadLimits`, a frozen dataclass pinning five
+  positive-integer budgets: file size (64 MiB), zip entries (10,000),
+  decompressed part size (32 MiB), per-call total (128 MiB), and XML
+  elements (1M). Hostile inputs are refused before parsing through a
+  closed set of 12 codes: non-regular files, oversized files, too many
+  entries, oversized or duplicate (case-insensitive) parts, encrypted
+  flags, DOCTYPE/ENTITY, unsupported encodings (UTF-16 is refused),
+  malformed XML, and a missing main part. A refusal is non-destructive:
+  the receipt becomes a null observation (H1 = 0, mask `0000-000`)
+  whose evidence carries the refusal code only — never part names,
+  document content, or paths. Accepted inputs are byte-identical to
+  v0.18.0.
 
 ## 📦 Installation
 
@@ -352,6 +366,15 @@ domain of **machine-readable vs. human-visible divergence**.
    contract explicitly. Duplicate keys / `NaN` / `Infinity` in vocab
    or thresholds files now fall back to the embedded defaults instead
    of being accepted with last-wins semantics.
+
+15. **L1 guards the core extractor only.** `ReadLimits` and the
+   closed-set refusals protect the core reading paths
+   (`.txt`/`.md`/`.html`/`.htm`/`.docx`); the PDF, OCR, image-layer,
+   and report extensions read through their own libraries
+   (`pypdf`, `pytesseract`, `Pillow`, ...) and are outside L1
+   (future L2/L3 scope). Refusal evidence is deliberately coarse —
+   the code only — so identifying which part triggered a refusal
+   requires re-examining the file with other tooling.
 
 ---
 
