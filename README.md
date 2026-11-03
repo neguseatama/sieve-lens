@@ -376,6 +376,23 @@ domain of **machine-readable vs. human-visible divergence**.
    the code only — so identifying which part triggered a refusal
    requires re-examining the file with other tooling.
 
+16. **H8 (geometry) is outside the 7-bit mask.** The mask stays
+   `H1H2H3H4-H5H6H7` and never carries the geometry lane's findings;
+   they are confirmed through the lane's own receipt
+   (`audit_geometry` / `audit_pdf_geometry`), not through
+   mask/h_states/evidence.
+
+17. **pypdf versions drift in the pdf_images pins.** Measured band:
+   with pypdf 6.6.0 the `TestPdfImagesFormInlinePins` count pin drifts
+   (4 != 3 — fixture-side counting, not a library defect); with pypdf
+   6.21.4 the whole suite is green. The CI pypdf pin stays open in the
+   ledger.
+
+18. **CSV/Excel inputs are not supported** (roadmap candidate). The
+   engine reads `.txt`/`.md`/`.html`/`.htm`/`.docx` plus the optional
+   PDF/image extensions; column-oriented formats need a column-role
+   specification to be settled before they can be observed.
+
 ---
 
 ## 📄 License

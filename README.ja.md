@@ -356,6 +356,20 @@ Sieve シリーズの JSON ゲートはすべて、宣言済みの単一契約�
    してあるため、どのパートが拒否を引き起こしたかを特定するには、他の
    道具でファイルを再調査する必要があります。
 
+16. **H8（幾何）は 7 ビット mask の外。** mask は `H1H2H3H4-H5H6H7` のまま
+   で、幾何レーンの所見が運ばれることはありません。幾何の所見はレーン自身の
+   レシート（`audit_geometry` / `audit_pdf_geometry`）で確認するもので、
+   mask・h_states・evidence には出ません。
+
+17. **pypdf の版で pdf_images pins が動く。** 実測バンド: pypdf 6.6.0 では
+   `TestPdfImagesFormInlinePins` の計数 pin がずれ（4 != 3 — fixture 側の
+   計数でライブラリの不具合ではない）、pypdf 6.21.4 では全スイートが緑。
+   CI の pypdf pin は台帳に open として残します。
+
+18. **CSV/Excel 入力は非対応**（ロードマップ候補）。エンジンが読むのは
+   `.txt`/`.md`/`.html`/`.htm`/`.docx` と任意の PDF・画像拡張で、列指向
+   形式は列の役割の仕様を固めてから観測対象になります。
+
 ---
 
 ## 📄 ライセンス
