@@ -1,3 +1,0 @@
-1d9b3a8bf70e50a95891acf63ca18900fbe3b432d923cb32efe303eac7306ce8  dist/sieve_lens-0.19.0-py3-none-any.whl
-2bd0a7ecc1b514cb67cfb39117496d3fefb488d108f4fc9b35fe3369e16265f7  dist/sieve_lens-0.19.0.tar.gz
-dc27111c2291d3aaa8d221e5856c39ad072c30ba93a9a47fa23a4a015b4ca6ca  README_version_fix.patch

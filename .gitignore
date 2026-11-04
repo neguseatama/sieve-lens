@@ -30,3 +30,9 @@ Thumbs.db
 # Sieve Lens generated reports
 reports/
 *.observation.txt
+
+# Local release-kit artifacts (never commit builds/patches)
+sieve_lens-*.whl
+sieve_lens-*.tar.gz
+*.mbox
+SHA256SUMS.txt
