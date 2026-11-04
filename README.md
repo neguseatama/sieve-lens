@@ -146,6 +146,9 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 - **DOCX concealment observation (L2)** (v0.20+)
   Finds the invisible text a `.docx` can carry: hidden-text marks, tiny fonts, letters painted into the background, and leftovers of tracked deletions — reported as separate `hidden` segments next to the body text. Background colour is resolved through Word's highlight, shading and theme settings. The engine reports the fact that text cannot be seen; it never judges intent. Documents with broken style/theme/settings parts are refused instead of ignored.
 
+- **Pinned character table** (v0.21+)
+  Lens ships the character table the Sieve tools share (`chartable_v1.json`, fixed by sha256): the invisible characters, the look-alike twins, and the fullwidth/space/dash folding rules in one file. The loader verifies the pin on every load — a missing, tampered or malformed table is a hard error, never a silent fallback. See `docs/CHARTABLE.md`.
+
 ## 📦 Installation
 
 ```bash

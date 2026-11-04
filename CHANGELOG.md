@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.21.0] - 2026-11-05
+
+### Added
+- **The pinned character table ships with Lens**: `chartable_v1.json`
+  is the character table the Sieve tools share (schema
+  `sieve-chartable/1`) — the invisible characters, the look-alike
+  twins, the fullwidth ASCII range, the folding spaces and the folding
+  dashes — and the copies in the other Sieve tools are pinned to these
+  exact bytes by sha256
+  (`c5ae4757bc9d07a2dcd1507d662460c3412c932d73318e54912569608242e605`,
+  2,693 bytes). The file is carried inside the package (wheel and
+  sdist, declared as package data). The loader verifies the sha256 pin
+  on the exact bytes on every load and is fail-closed: a missing,
+  tampered or malformed table is a hard error, never a silent
+  fallback; every call returns a fresh dict, and the file is read
+  lazily (importing the module opens nothing). The observation
+  pipeline is unchanged in this version.
+
 ## [0.20.2] - 2026-11-05
 
 ### Fixed

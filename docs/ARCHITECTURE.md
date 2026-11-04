@@ -91,6 +91,21 @@ The distinction is intentional. It preserves:
 
 ---
 
+## The Pinned Character Table
+
+`sieve_lens_ext/chartable.py` loads the packaged character table
+`sieve_lens_ext/chartable_v1.json` (schema `sieve-chartable/1`): the
+invisible characters, the look-alike twins, the fullwidth ASCII range,
+the folding spaces and the folding dashes, in one sha256-pinned file.
+The loader is fail-closed and lazy: it verifies the digest pin on the
+exact bytes on every load, raises `ChartableError` on a missing,
+tampered or malformed table (no fallback), and returns a fresh dict per
+call. The observation pipeline does not consume the table yet; the
+module establishes the pinned source of the standard inside Lens. See
+`docs/CHARTABLE.md` for the table contents.
+
+---
+
 ## Determinism Guarantees
 
 - No use of `random`, `time`, `datetime`, `os.environ`, or filesystem state
