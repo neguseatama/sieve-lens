@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.19.1
+# Sieve Lens v0.20.0
 
 ## 💡 コンセプト
 
@@ -49,7 +49,7 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 | H1 | Parseability | 文書が正常に読み込めるか |
 | H2 | Zero-Width Density | ゼロ幅文字の密度が閾値超過 |
 | H3 | Bidi Controls | 双方向制御文字の存在 |
-| H4 | Format Concealment | CSS による隠蔽（display:none 等） |
+| H4 | Format Concealment | CSS による隠蔽（display:none 等）。DOCX 隠蔽（隠し文字書式 / ほぼ見えない色 / 極小フォント / 変更履歴の削除） |
 | H5 | Out-of-Band Channel | コメント・メタデータ・ヘッダー・フッター・脚注に実質的内容 |
 | H6 | Script Mixing | 同一トークン内の異文字体系混在 |
 | H7 | Contiguous Payload | 閾値長以上の連続した不可視文字 |
@@ -64,7 +64,7 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
 |------|---------|------|
 | `.txt` / `.md` | プレーンテキスト、全文字スキャン | なし（Core） |
 | `.html` / `.htm` | インライン style 属性および `<style>` ブロックの隠蔽検出、オプションで外部 CSS 解決 | なし（Core）；`tinycss2`（オプション） |
-| `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注 | なし（Core） |
+| `.docx` | 本文・コメント・core プロパティ・ヘッダー・フッター・脚注・末尾脚注。隠蔽の観測（隠し文字書式・ほぼ見えない色・極小フォント・変更履歴の削除） | なし（Core） |
 | `.pdf` | 本文・メタデータ・注釈・不可視テキスト（Tr 3）・Form XObject 内テキスト(Tr 3 / raw ストリーム) | `pypdf`（オプション） |
 | `.png` / `.jpg` / `.jpeg` / `.gif` / `.bmp` / `.tif` / `.tiff` / `.webp` | メタデータ（EXIF / PNG tEXt / XMP）＋ OCR テキスト | `Pillow`・`pytesseract` ＋ tesseract バイナリ＋言語パック（オプション） |
 
@@ -147,6 +147,21 @@ Redact が「他は何も変わっていない」ことを証明するレシー�
   ヌル観測（H1 = 0・マスク `0000-000`）になり、証拠は拒否符号のみを
   運びます — パート名も文書内容もパスも含めません。受理された入力は
   v0.18.0 とバイト単位で同一です。
+- **DOCX 隠蔽の観測（L2）**(v0.20 以降)  
+  DOCX 抽出器は run ごとの実効書式を解決し（docDefaults → 段落スタイル
+  連鎖 → 文字スタイル連鎖 → 直接書式・スタイル ID ごとにメモ化）、人が
+  見えない run を本文から `docx_hidden` 区間として分離します：
+  `vanish`（隠し文字書式）・`low_contrast`（解決した前景と背景の Rec.709
+  輝度差 D < 20・証拠に解決した色と出所を含む）・`tiny_font`
+  （`w:sz`/`w:szCs` が 2 半ポイント以下）・`tracked_deletion`
+  （`w:del` / `w:moveFrom` の内側、または `w:del` の外の `w:delText`）。
+  背景は highlight を最優先（Word のパレット）で、次に run / 段落 / セル
+  の網かけ、ページ背景（`w:displayBackgroundShape` があるときのみ）、
+  既定の白。テーマ色は `w:clrSchemeMapping` と theme1.xml で解決します。
+  書式の 3 部品（`word/styles.xml`・`word/theme/theme1.xml`・
+  `word/settings.xml`）は同じ L1 の予算と境界で読み、壊れていれば拒否
+  （既知の限界 20 参照）。エンジンは「原理的に見えない」という事実を報告
+  するのみで、意図は判定しません。
 
 ## 📦 インストール
 
@@ -369,6 +384,33 @@ Sieve シリーズの JSON ゲートはすべて、宣言済みの単一契約�
 18. **CSV/Excel 入力は非対応**（ロードマップ候補）。エンジンが読むのは
    `.txt`/`.md`/`.html`/`.htm`/`.docx` と任意の PDF・画像拡張で、列指向
    形式は列の役割の仕様を固めてから観測対象になります。
+
+19. **DOCX 隠蔽の簡約（宣言済み・L2）。** トグル性質（`w:vanish`）は通常の
+   上書き（最後の明示が勝つ）で解決します。ECMA-376 はレベル間で排他的
+   論和（basedOn 連鎖の内側は「最初の明示値」・docDefaults=true は強制
+   オン）なので、両者が食い違うのは同じトグルが複数レベルで明示された
+   ときだけです。表のスタイル（条件付き書式）は解決しない。`w:w`・
+   `w:spacing`・`w:position`・`w:fitText` の隠蔽は観測しない。
+   `w:moveFromRangeStart/End` の範囲だけの削除は未対応。空白だけの隠れ
+   run は見える文字列に残る。解決できない性質（fill ≠ color の模様網かけ・
+   不正な値）は主張しない。Strict OOXML 名前空間の文書は依然「parsed
+   successfully ＋空の観測」になります（記録済み — 後続の小さな版で
+   「未観測」として拒否する予定です）。
+
+20. **v0.19.1 で受理されていた一部の文書が新しく拒否されます（意図した
+   変化・L2）。** 書式の 3 部品（`word/styles.xml`・`word/theme/theme1.xml`・
+   `word/settings.xml`）を同じ L1 の境界と 128 MiB の合計予算で読むように
+   なったため、不正・DOCTYPE あり・暗号化・過大な補助部品は無視されずに
+   対応する L1 符号で拒否されます。これらの部品がない文書（または整形式
+   の文書）は影響なし — 対象外の観測は v0.19.1 とバイト単位で同一
+   （pin 済み）です。
+
+21. **低コントラストの閾値は L2 固有の整数規則。** 検出は Rec.709 輝度
+   （ガンマ補正なし）の D = |Y前景 − Y背景| // 10000 < 20。境界の組は
+   ECECEC/白（D = 19・検出）と EBEBEB/白（D = 20・非検出）。白地に
+   EBEBEB より明るい薄い灰色の透かしは、設計どおり検出しません。
+   highlight の色は Word の描画パレットに固定し、ECMA-376 の散文が
+   挙げる dark*/gray 系の値（CSS 由来）とは異なるため使用しません。
 
 ---
 

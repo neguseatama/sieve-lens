@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.20.0] - 2026-11-04
+
+### Added
+- **DOCX concealment observation (L2)**: the DOCX extractor resolves
+  the effective run formatting (docDefaults → paragraph style chain →
+  character style chain → direct formatting, memoized per style id)
+  and splits runs a human reader would not see out of the visible text
+  into `docx_hidden` segments (`visible=False`), with the closed
+  reason vocabulary `CONCEALMENT_REASONS = ("vanish", "low_contrast",
+  "tiny_font", "tracked_deletion")`: hidden-text formatting, near-
+  invisible colour (Rec.709 luma step D < 20, evidence carries the
+  resolved colours and source), `w:sz`/`w:szCs` ≤ 2 half-points, and
+  text inside `w:del` / `w:moveFrom` (or `w:delText` outside `w:del`).
+  Whitespace-only concealed runs stay in the visible text; adjacent
+  same-reason runs merge into one segment.
+- **H4 condition extension (the one declared mask-assembly change)**:
+  `docx_hidden` segments fire H4 (Format Concealment) alongside the
+  HTML `css_hidden` segments, and their text joins `body_text` like
+  `css_hidden`, so H2/H3/H6/H7 keep scanning it (detection never
+  decreases). `OOB_KINDS` (H5) is unchanged.
+- **Formatting sources**: `word/styles.xml`, `word/theme/theme1.xml`
+  and `word/settings.xml` are read through the same L1 bounds and the
+  same budget (absent is normal; malformed/encrypted/oversized/
+  DOCTYPE refuses with the L1 code). Theme colours resolve through
+  `w:clrSchemeMapping` and the theme part; backgrounds resolve
+  highlight-first (Word's palette), then run / paragraph / cell
+  shading, then the page background (only with
+  `w:displayBackgroundShape`), then white.
+- **Tests**: `tests/test_sieve_lens_l2_docx.py` (L2-T01..T12, 61
+  methods) with the non-destruction goldens measured on v0.19.1
+  (0dbfdc1) before the change. Suite: 356 -> 417 (+61).
+
+### Changed
+- **Thresholds fixed by the design answers (2026-11-04)**: low-contrast
+  D < 20 with the confirmed boundary pairs (ECECEC/white detected at
+  D = 19, EBEBEB/white not at D = 20); tiny font `w:sz`/`w:szCs` ≤ 2
+  half-points (≤ 1 pt); highlight beats shading (ECMA-376 §17.3.2.15);
+  `w:shd` `nil` falls through; `w:themeColor` wins over `w:val` unless
+  `themeTint`/`themeShade` is present. The geometry thresholds and
+  their digest are untouched.
+- **Existing test**: the unread-encrypted-entry fixture moved from
+  `word/settings.xml` (now a read part) to `word/numbering.xml`; the
+  L1 version pin moved to 0.20.0.
+- **Docs**: README en/ja gain the L2 feature section and known
+  limitations 19-21 (declared simplifications, the new-refusal
+  boundary, the low-contrast rule); `docs/ARCHITECTURE.md` reflects
+  the extended DOCX extractor model.
+
+### Security / Non-destruction
+- Non-target observations are byte-identical to v0.19.1 (pinned on 5
+  golden documents: mask, h_states, evidence, segments, diagnostics,
+  normalized report hashes). Frozen files (`schema.py`,
+  `control_syntax.py`, `geometry.py`, `redact_bridge.py`), the refusal
+  code set (12), `ReadLimits`, the vocabulary and geometry digests and
+  the Schema Contract corpus are unchanged; zero new dependencies.
+
+
 ## [0.19.1] - 2026-11-04
 
 ### Added

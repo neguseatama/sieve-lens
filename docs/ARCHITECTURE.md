@@ -38,7 +38,7 @@ v
 | H1 | Parseability | Format-specific extraction succeeds |
 | H2 | Zero-Width Density | Symbolic density over body text |
 | H3 | Bidi Controls | Presence of directional control chars |
-| H4 | Format Concealment | Inline CSS hiding rules |
+| H4 | Format Concealment | Inline CSS hiding rules; DOCX concealment (vanish / low-contrast / tiny font / tracked deletions) |
 | H5 | Out-of-Band Channel | Comments, metadata, hidden attrs |
 | H6 | Script Mixing | Homoglyph signature within tokens |
 | H7 | Contiguous Payload | Long runs of invisible characters |
@@ -55,7 +55,14 @@ Each format is handled by a dedicated `_Extractor` subclass:
 - `_HtmlExtractor` — uses `html.parser.HTMLParser`, tracks hidden-state stack,
   captures comments and hidden attributes
 - `_DocxExtractor` — uses `zipfile` + `xml.etree.ElementTree` to read
-  `word/document.xml`, `word/comments.xml`, `docProps/core.xml`
+  `word/document.xml`, `word/styles.xml`, `word/theme/theme1.xml`,
+  `word/settings.xml`, `word/comments.xml`, `docProps/core.xml`,
+  headers, footers, footnotes and endnotes. Since v0.20 it resolves
+  the effective run formatting (docDefaults → style chains → direct,
+  memoized) and emits concealed runs as `docx_hidden` segments
+  (`visible=False`), which feed H4 alongside the HTML `css_hidden`
+  segments; the visible text keeps the v0.19 segment shape for
+  non-concealed documents.
 
 The extractor does **not** interpret content. It only separates body text from
 out-of-band channels.

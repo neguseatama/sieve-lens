@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.19.1
+# Sieve Lens v0.20.0
 
 ## 💡 Concept
 
@@ -50,7 +50,7 @@ Redact removes it with a receipt that proves nothing else changed.
 | H1 | Parseability | The file can be read and parsed |
 | H2 | Zero-Width Density | Density of zero-width chars exceeds threshold |
 | H3 | Bidi Controls | Bidi control characters present |
-| H4 | Format Concealment | CSS hiding rules (`display:none`, etc.) present |
+| H4 | Format Concealment | CSS hiding rules (`display:none`, etc.); DOCX concealment (hidden-text formatting / near-invisible colour / tiny font / tracked deletions) |
 | H5 | Out-of-Band Channel | Meaningful content in comments / metadata / headers / footers / footnotes |
 | H6 | Script Mixing | Latin+Cyrillic or Latin+Greek mixed within a token |
 | H7 | Contiguous Payload | A run of ≥ N contiguous invisible chars exists |
@@ -65,7 +65,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 |--------|----------|--------------|
 | `.txt`, `.md` | Plain text, full character-level scanning | none (core) |
 | `.html`, `.htm` | HTML with inline-style and `<style>` block concealment detection; optional external CSS resolution | none (core); `tinycss2` (optional) |
-| `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes | none (core) |
+| `.docx` | Body, comments, core properties, headers, footers, footnotes, endnotes; concealment observation (hidden-text formatting, near-invisible colour, tiny font, tracked deletions) | none (core) |
 | `.pdf` | Body text, metadata, annotations, invisible text (Tr 3), Form XObject text (Tr 3 / raw stream) | `pypdf` (optional) |
 | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.webp` | Metadata (EXIF / PNG text / XMP) + OCR text | `Pillow`, `pytesseract` + tesseract binary + language packs (optional) |
 
@@ -154,6 +154,25 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   whose evidence carries the refusal code only — never part names,
   document content, or paths. Accepted inputs are byte-identical to
   v0.18.0.
+- **DOCX concealment observation (L2)** (since v0.20)  
+  The DOCX extractor resolves the effective run formatting
+  (docDefaults → paragraph style chain → character style chain →
+  direct formatting, memoized) and splits runs that a human reader
+  would not see out of the visible text into `docx_hidden` segments:
+  `vanish` (hidden-text formatting), `low_contrast` (Rec.709 luma step
+  D < 20 between the resolved foreground and background, with the
+  resolved colours and source in the evidence), `tiny_font`
+  (`w:sz`/`w:szCs` ≤ 2 half-points), and `tracked_deletion` (text
+  inside `w:del` / `w:moveFrom`, or `w:delText` outside `w:del`).
+  Backgrounds resolve highlight-first (Word's palette), then run /
+  paragraph / cell shading, then the page background (only when
+  `w:displayBackgroundShape` is set), then white. Theme colours
+  resolve through `w:clrSchemeMapping` and `theme1.xml`. The three
+  formatting parts (`word/styles.xml`, `word/theme/theme1.xml`,
+  `word/settings.xml`) are read through the same L1 bounds and shared
+  budget; a malformed one refuses (see limitation 20). The engine
+  reports the fact that text is invisible-in-principle; it never
+  judges whether it is abusive.
 
 ## 📦 Installation
 
@@ -392,6 +411,39 @@ domain of **machine-readable vs. human-visible divergence**.
    engine reads `.txt`/`.md`/`.html`/`.htm`/`.docx` plus the optional
    PDF/image extensions; column-oriented formats need a column-role
    specification to be settled before they can be observed.
+
+19. **DOCX concealment simplifications (declared, L2).** Toggle
+   properties (`w:vanish`) resolve by plain override — the last
+   explicit level wins — while ECMA-376 resolves toggles by XOR
+   *between* style levels (first explicit value wins *within* a
+   `basedOn` chain; docDefaults=true forces on). The two disagree only
+   when the same toggle is explicit at more than one level. Table
+   styles (conditional formatting) are not resolved; `w:w`,
+   `w:spacing`, `w:position`, `w:fitText` concealment is not observed;
+   `w:moveFromRangeStart/End` range-only deletions are not covered;
+   whitespace-only concealed runs stay in the visible text; properties
+   that cannot be resolved (pattern shading with fill ≠ colour,
+   invalid values) are not claimed. Strict-OOXML-namespace documents
+   still parse to an empty observation with `parsed successfully`
+   (recorded — a follow-up patch release is expected to refuse them as
+   unobserved).
+
+20. **Some v0.19.1-accepted documents now refuse (intended, L2).** The
+   three formatting parts (`word/styles.xml`, `word/theme/theme1.xml`,
+   `word/settings.xml`) are now read through the same L1 bounds and
+   the same 128 MiB budget: a malformed, DOCTYPE-carrying, encrypted
+   or oversized auxiliary part now refuses with the corresponding L1
+   code instead of being ignored. Documents without these parts (or
+   with well-formed ones) are unaffected — non-target observations are
+   byte-identical to v0.19.1 (pinned).
+
+21. **Low-contrast threshold is its own integer rule (L2).** Detection
+   uses D = |Y_fg − Y_bg| // 10000 < 20 on Rec.709 luma without gamma
+   correction; the boundary pairs are ECECEC/white (D = 19, detected)
+   and EBEBEB/white (D = 20, not detected). Light-gray watermarks
+   (EBEBEB or lighter on white) are not detected by design. Highlight
+   colours follow Word's rendering palette; ECMA-376's prose values
+   for the dark*/gray names differ (CSS-derived) and are not used.
 
 ---
 
