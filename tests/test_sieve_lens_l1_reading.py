@@ -660,10 +660,13 @@ class TestL1T06DuplicateAndEncrypted(L1Base):
                          ["Extraction refused: encrypted"])
 
     def test_encrypted_flag_on_unread_entry_is_tolerated(self):
+        # L2 made word/settings.xml a read part (its encrypted flag now
+        # refuses), so the unread-entry fixture moved to a part the
+        # engine still does not read (5.1-2, disclosed in the report).
         p = self._make_docx("enc2.docx", body="Yamada Taro.")
         with zipfile.ZipFile(p, "a") as zf:
-            zf.writestr("word/settings.xml", b"<not-read/>")
-        p = self._forge_flag_bits(p, "word/settings.xml", 0x1)
+            zf.writestr("word/numbering.xml", b"<not-read/>")
+        p = self._forge_flag_bits(p, "word/numbering.xml", 0x1)
         obs = SieveLensEngine().observe(p)
         self.assertEqual(obs.mask, "1000-000")
         self.assertEqual(obs.evidence["H1"], ["parsed successfully"])

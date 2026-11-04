@@ -472,13 +472,278 @@ class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
 
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _CP_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
 _DC_NS = "http://purl.org/dc/elements/1.1/"
 
 
 def _w(tag): return f"{{{_W_NS}}}{tag}"
+def _a(tag): return f"{{{_A_NS}}}{tag}"
 def _cp(tag): return f"{{{_CP_NS}}}{tag}"
 def _dc(tag): return f"{{{_DC_NS}}}{tag}"
+
+
+# ----------------------------------------------------------------------
+# 4.5 DOCX concealment (L2) — closed vocabulary and format resolution
+# ----------------------------------------------------------------------
+
+# Why a run's text may be invisible to a human reader while remaining
+# machine-readable. Closed set; the order is the evidence order.
+CONCEALMENT_REASONS = ("vanish", "low_contrast", "tiny_font",
+                       "tracked_deletion")
+
+# L2 core thresholds (design answers 2026-11-04). Integer arithmetic
+# only; the geometry lane thresholds and their digest stay untouched.
+_LOW_CONTRAST_MAX_LUMA_STEP = 20   # D = |dY| // 10000 < 20 (<= 19 fires)
+_TINY_FONT_MAX_HALF_POINTS = 2     # w:sz / w:szCs <= 2 (<= 1 pt)
+_STYLE_CHAIN_MAX_DEPTH = 100       # basedOn chain length; over -> refuse
+
+# Word's actual highlight palette (design answer 5). ECMA-376 5th ed.
+# prose lists CSS-derived values for the dark*/gray names; the values
+# below follow Word's rendering values (WdColorIndex / [MS-OE376]),
+# fixed by the design answer. Looked up case-insensitively.
+_WORD_HIGHLIGHT_COLORS = {
+    "black": "000000", "blue": "0000FF", "cyan": "00FFFF",
+    "darkblue": "000080", "darkcyan": "008080", "darkgray": "808080",
+    "darkgreen": "008000", "darkmagenta": "800080", "darkred": "800000",
+    "darkyellow": "808000", "green": "008000", "lightgray": "C0C0C0",
+    "magenta": "FF00FF", "red": "FF0000", "white": "FFFFFF",
+    "yellow": "FFFF00",
+}
+
+# Internal marker for w:t elements whose run is concealed; cleaned
+# before every scan and never serialized.
+_CONCEAL_MARK = "_l2_concealed"
+
+
+def _docx_hex6(value):
+    """Uppercase 6-digit hex, or None (auto/invalid/unset -> None)."""
+    if value is None:
+        return None
+    v = value.strip()
+    if len(v) != 6:
+        return None
+    try:
+        int(v, 16)
+    except ValueError:
+        return None
+    return v.upper()
+
+
+def _docx_onoff(el):
+    """True/False for an on/off element; None when unresolved."""
+    if el is None:
+        return None
+    raw = el.get(_w("val"))
+    if raw is None:
+        return True
+    v = raw.strip().lower()
+    if v in ("1", "true", "on"):
+        return True
+    if v in ("0", "false", "off"):
+        return False
+    return None
+
+
+def _docx_luma(hex6):
+    """Rec.709 luma on the 0..255000 scale (no gamma, integer only)."""
+    r = int(hex6[0:2], 16)
+    g = int(hex6[2:4], 16)
+    b = int(hex6[4:6], 16)
+    return 2126 * r + 7152 * g + 722 * b
+
+
+def _interpret_shd(shd_el):
+    """(hex, state) for one w:shd element; state in resolved/next/stop.
+
+    clear -> the fill colour; solid -> the pattern (w:color) colour;
+    nil -> paints nothing and falls through (design answer 6); any
+    pattern value only when fill and colour agree, otherwise the run
+    makes no low_contrast claim at all (design 3.4)."""
+    if shd_el is None:
+        return None, "next"
+    val = shd_el.get(_w("val"))
+    if val is None or val == "clear":
+        hexv = _docx_hex6(shd_el.get(_w("fill")))
+        return (hexv, "resolved") if hexv else (None, "next")
+    if val == "solid":
+        hexv = _docx_hex6(shd_el.get(_w("color")))
+        return (hexv, "resolved") if hexv else (None, "next")
+    if val == "nil":
+        return None, "next"
+    fill = _docx_hex6(shd_el.get(_w("fill")))
+    color = _docx_hex6(shd_el.get(_w("color")))
+    if fill and color and fill == color:
+        return fill, "resolved"
+    return None, "stop"
+
+
+def _resolve_background(run_shd, para_shd, cell_shd, page_hex):
+    """(hex, src) from the shading stages, nearest first (design 3.4
+    with answer 5: the highlight stage is handled by the caller)."""
+    for el, src in ((run_shd, "run_shading"),
+                    (para_shd, "paragraph_shading"),
+                    (cell_shd, "cell_shading")):
+        hexv, state = _interpret_shd(el)
+        if state == "stop":
+            return None, None
+        if hexv:
+            return hexv, src
+    if page_hex:
+        return page_hex, "page_background"
+    return "FFFFFF", "default"
+
+
+class _DocxStyleResolver:
+    """Effective run properties for one document (L2, design 3.3).
+
+    Priority, low to high: docDefaults -> paragraph style chain
+    (w:pStyle, w:basedOn) -> character style chain (w:rStyle) -> direct
+    run formatting. Toggle properties use the declared override
+    simplification (design 3.8-1): the last explicit level wins. The
+    chain is memoized per style id; a cycle or a chain longer than
+    _STYLE_CHAIN_MAX_DEPTH is refused as malformed_xml (design 3.2).
+    """
+
+    _SLOT_OF_INDEX = {"dark1": "dk1", "light1": "lt1", "dark2": "dk2",
+                      "light2": "lt2", "hyperlink": "hlink",
+                      "followedHyperlink": "folHlink"}
+    _ATTR_OF_THEME_COLOR = {
+        "background1": "bg1", "light1": "bg1",
+        "text1": "t1", "dark1": "t1",
+        "background2": "bg2", "light2": "bg2",
+        "text2": "t2", "dark2": "t2",
+    }
+    _MAPPING_DEFAULTS = {"bg1": "light1", "t1": "dark1",
+                         "bg2": "light2", "t2": "dark2"}
+
+    def __init__(self, styles_root, theme_root, settings_root):
+        self._styles = {}
+        if styles_root is not None:
+            for st in styles_root.iter(_w("style")):
+                sid = st.get(_w("styleId"))
+                if not sid:
+                    continue
+                based = st.find(_w("basedOn"))
+                self._styles[sid] = (
+                    based.get(_w("val")) if based is not None else None,
+                    st.find(_w("rPr")),
+                )
+        dd_rpr = None
+        if styles_root is not None:
+            dd = styles_root.find(_w("docDefaults"))
+            if dd is not None:
+                rprd = dd.find(_w("rPrDefault"))
+                if rprd is not None:
+                    dd_rpr = rprd.find(_w("rPr"))
+        self._doc_defaults = self._direct_props(dd_rpr)
+        self._chain_cache: Dict[str, Dict[str, object]] = {}
+        self._theme_slots = {}
+        if theme_root is not None:
+            elements = theme_root.find(_a("themeElements"))
+            scheme = (elements.find(_a("clrScheme"))
+                      if elements is not None else None)
+            if scheme is not None:
+                for slot in scheme:
+                    name = slot.tag.rsplit("}", 1)[-1]
+                    for child in slot:
+                        cname = child.tag.rsplit("}", 1)[-1]
+                        hexv = None
+                        if cname == "srgbClr":
+                            hexv = _docx_hex6(child.get("val"))
+                        elif cname == "sysClr":
+                            hexv = _docx_hex6(child.get("lastClr"))
+                        if hexv:
+                            self._theme_slots[name] = hexv
+                            break
+        # w:clrSchemeMapping (settings.xml); omitted entries keep the
+        # ECMA defaults (17.18.103 via 17.15.1.20).
+        self._mapping = dict(self._MAPPING_DEFAULTS)
+        for i in range(1, 7):
+            self._mapping[f"accent{i}"] = f"accent{i}"
+        self._mapping["hyperlink"] = "hyperlink"
+        self._mapping["followedHyperlink"] = "followedHyperlink"
+        self._display_bg = False
+        if settings_root is not None:
+            mapping = settings_root.find(_w("clrSchemeMapping"))
+            if mapping is not None:
+                for attr in self._mapping:
+                    value = mapping.get(_w(attr))
+                    if value:
+                        self._mapping[attr] = value
+            flag = settings_root.find(_w("displayBackgroundShape"))
+            if flag is not None and _docx_onoff(flag) is not False:
+                self._display_bg = True
+
+    @staticmethod
+    def _direct_props(rpr):
+        props: Dict[str, object] = {}
+        if rpr is not None:
+            for child in rpr:
+                props[child.tag.rsplit("}", 1)[-1]] = child
+        return props
+
+    def _chain_props(self, sid, depth=1, visiting=None):
+        if visiting is None:
+            visiting = set()
+        cached = self._chain_cache.get(sid)
+        if cached is not None:
+            return cached
+        if depth > _STYLE_CHAIN_MAX_DEPTH or sid in visiting:
+            raise ExtractionRefused("malformed_xml")
+        based, rpr = self._styles.get(sid, (None, None))
+        props = {}
+        if based and based in self._styles:
+            visiting.add(sid)
+            props.update(self._chain_props(based, depth + 1, visiting))
+            visiting.discard(sid)
+        props.update(self._direct_props(rpr))
+        self._chain_cache[sid] = props
+        return props
+
+    def effective(self, run_rpr, pstyle_id, rstyle_id):
+        """Direct-children-only property map for one run."""
+        props = dict(self._doc_defaults)
+        if pstyle_id and pstyle_id in self._styles:
+            props.update(self._chain_props(pstyle_id))
+        if rstyle_id and rstyle_id in self._styles:
+            props.update(self._chain_props(rstyle_id))
+        if run_rpr is not None:
+            for child in run_rpr:
+                props[child.tag.rsplit("}", 1)[-1]] = child
+        return props
+
+    def resolve_fg(self, color_el):
+        """(hex|None) for a w:color element (design 3.4, answer 7)."""
+        if color_el is None:
+            return None
+        val = _docx_hex6(color_el.get(_w("val")))
+        theme = color_el.get(_w("themeColor"))
+        if (theme and theme != "none"
+                and not color_el.get(_w("themeTint"))
+                and not color_el.get(_w("themeShade"))):
+            attr = self._ATTR_OF_THEME_COLOR.get(theme)
+            if attr is None and (theme.startswith("accent")
+                                 or theme in ("hyperlink",
+                                              "followedHyperlink")):
+                attr = theme
+            if attr:
+                index = self._mapping.get(attr)
+                slot = self._SLOT_OF_INDEX.get(index, index)
+                hexv = self._theme_slots.get(slot)
+                if hexv:
+                    return hexv
+        return val
+
+    def page_background_hex(self, root):
+        """Page background colour, only when displayBackgroundShape
+        allows it (design 3.4)."""
+        if not self._display_bg:
+            return None
+        bg = root.find(_w("background"))
+        if bg is None:
+            return None
+        return _docx_hex6(bg.get(_w("color")))
 
 
 class _DocxExtractor(_Extractor):
@@ -503,29 +768,50 @@ class _DocxExtractor(_Extractor):
             doc = _read_zip_part(zf, "word/document.xml", limits, budget)
             if doc is None:
                 raise ExtractionRefused("main_part_missing")
+            # L2 formatting sources ride the same L1 bounds and the
+            # same budget; any of them may be absent (a minimal .docx
+            # carries none of them), and a malformed one is an
+            # observation, not an empty result (design 3.2).
+            styles_root = self._read_optional_part(
+                zf, "word/styles.xml", limits, budget)
+            theme_root = self._read_optional_part(
+                zf, "word/theme/theme1.xml", limits, budget)
+            settings_root = self._read_optional_part(
+                zf, "word/settings.xml", limits, budget)
+            resolver = _DocxStyleResolver(
+                styles_root, theme_root, settings_root)
             root = _parse_bounded_xml(doc)
-            segments.extend(self._paragraph_segments(
-                root, kind="body", visible=True,
+            segments.extend(self._body_segments(
+                root, resolver, visible_kind="body",
                 location_prefix="paragraph"))
-            segments.extend(self._headers_footers(zf, limits, budget))
+            segments.extend(self._headers_footers(zf, limits, budget,
+                                                  resolver))
             segments.extend(self._notes(zf, limits, budget))
             segments.extend(self._comments_part(zf, limits, budget))
             segments.extend(self._core_props_part(zf, limits, budget))
         return segments
 
-    def _headers_footers(self, zf, limits, budget) -> List[Segment]:
+    @staticmethod
+    def _read_optional_part(zf, name, limits, budget):
+        data = _read_zip_part(zf, name, limits, budget)
+        if data is None:
+            return None
+        return _parse_bounded_xml(data)
+
+    def _headers_footers(self, zf, limits, budget,
+                         resolver) -> List[Segment]:
         segments = []
         for name in sorted(zf.namelist()):
             if name.startswith("word/header") and name.endswith(".xml"):
                 label = name.replace("word/", "").replace(".xml", "")
-                segments.extend(self._segments_from_part(
-                    zf, name, limits, budget, kind="header_footer",
-                    visible=True, location_prefix=label))
+                segments.extend(self._part_segments(
+                    zf, name, limits, budget, resolver,
+                    visible_kind="header_footer", location_prefix=label))
             elif name.startswith("word/footer") and name.endswith(".xml"):
                 label = name.replace("word/", "").replace(".xml", "")
-                segments.extend(self._segments_from_part(
-                    zf, name, limits, budget, kind="header_footer",
-                    visible=True, location_prefix=label))
+                segments.extend(self._part_segments(
+                    zf, name, limits, budget, resolver,
+                    visible_kind="header_footer", location_prefix=label))
         return segments
 
     def _notes(self, zf, limits, budget) -> List[Segment]:
@@ -586,30 +872,178 @@ class _DocxExtractor(_Extractor):
                     ))
         return segments
 
-    def _segments_from_part(self, zf, name, limits, budget, kind: str,
-                            visible: bool,
-                            location_prefix: str) -> List[Segment]:
+    def _part_segments(self, zf, name, limits, budget, resolver,
+                       visible_kind, location_prefix) -> List[Segment]:
         data = _read_zip_part(zf, name, limits, budget)
         if data is None:
             return []
         root = _parse_bounded_xml(data)
-        return self._paragraph_segments(
-            root, kind=kind, visible=visible,
-            location_prefix=location_prefix)
+        return self._body_segments(root, resolver,
+                                   visible_kind=visible_kind,
+                                   location_prefix=location_prefix)
 
-    @staticmethod
-    def _paragraph_segments(root, kind: str, visible: bool,
-                            location_prefix: str) -> List[Segment]:
-        segments = []
+    def _body_segments(self, root, resolver, visible_kind="body",
+                       location_prefix="paragraph") -> List[Segment]:
+        """Paragraph segments for one body part, with L2 concealment.
+
+        Visible runs keep the v0.19.0 segment shape (same boundaries
+        and the same concatenation, nested content included); concealed
+        runs are split out as kind="docx_hidden" segments. Per
+        paragraph the visible segment comes first, then the concealed
+        groups in run order (design 3.5); a whitespace-only concealed
+        run stays in the visible text (design answer 10)."""
+        for t in root.iter(_w("t")):
+            t.attrib.pop(_CONCEAL_MARK, None)
+        page_hex = resolver.page_background_hex(root)
+        para_events: Dict[int, list] = {}
+
+        def break_at(idx):
+            if idx is not None:
+                para_events.setdefault(idx, []).append(None)
+
+        def walk(el, para_idx, pstyle, para_shd, cell_shd,
+                 in_del, in_move):
+            tag = el.tag
+            if tag == _w("p"):
+                if para_idx is not None:
+                    break_at(para_idx)  # nested paragraph ends adjacency
+                para_counter[0] += 1
+                idx = para_counter[0]
+                ppr = el.find(_w("pPr"))
+                pstyle2 = None
+                pshd2 = None
+                if ppr is not None:
+                    ps = ppr.find(_w("pStyle"))
+                    pstyle2 = ps.get(_w("val")) if ps is not None else None
+                    pshd2 = ppr.find(_w("shd"))
+                for child in el:
+                    walk(child, idx, pstyle2, pshd2, cell_shd,
+                         in_del, in_move)
+                return
+            if tag == _w("tbl"):
+                break_at(para_idx)
+                for child in el:
+                    walk(child, para_idx, pstyle, para_shd, cell_shd,
+                         in_del, in_move)
+                return
+            if tag == _w("tc"):
+                tcpr = el.find(_w("tcPr"))
+                cshd = tcpr.find(_w("shd")) if tcpr is not None else None
+                for child in el:
+                    walk(child, para_idx, pstyle, para_shd, cshd,
+                         in_del, in_move)
+                return
+            if tag in (_w("del"), _w("moveFrom")):
+                is_del = tag == _w("del")
+                for child in el:
+                    walk(child, para_idx, pstyle, para_shd, cell_shd,
+                         in_del or is_del, in_move or not is_del)
+                return
+            if tag == _w("r"):
+                if para_idx is None:
+                    return
+                res = self._run_reasons(el, resolver, pstyle, para_shd,
+                                        cell_shd, page_hex,
+                                        in_del, in_move)
+                events = para_events.setdefault(para_idx, [])
+                if res is None or not res[2].strip():
+                    # visible run, or whitespace-only concealed run
+                    # (stays in the visible text): adjacency ends
+                    events.append(None)
+                    return
+                reasons, detail, text = res
+                for t in el.iter(_w("t")):
+                    t.set(_CONCEAL_MARK, "1")
+                events.append((reasons, detail, text))
+                return
+            if tag == _w("t"):
+                # bare text outside any run still ends adjacency
+                break_at(para_idx)
+                return
+            for child in el:
+                walk(child, para_idx, pstyle, para_shd, cell_shd,
+                     in_del, in_move)
+
+        para_counter = [0]
+        walk(root, None, None, None, None, False, False)
+
+        segments: List[Segment] = []
         for idx, para in enumerate(root.iter(_w("p")), start=1):
-            texts = [(t.text or "") for t in para.iter(_w("t"))]
-            text = "".join(texts)
-            if text.strip():
-                segments.append(Segment(
-                    text=text, visible=visible, kind=kind,
-                    location=f"{location_prefix} {idx}",
-                ))
+            loc = f"{location_prefix} {idx}"
+            visible = "".join(
+                (t.text or "") for t in para.iter(_w("t"))
+                if t.get(_CONCEAL_MARK) is None)
+            if visible.strip():
+                segments.append(Segment(text=visible, visible=True,
+                                        kind=visible_kind, location=loc))
+            current = None
+            for event in para_events.get(idx, []):
+                if event is None:
+                    current = None
+                    continue
+                reasons, detail, text = event
+                if current is not None and current[0] == reasons:
+                    current[3].text += text
+                    continue
+                seg = Segment(text=text, visible=False,
+                              kind="docx_hidden", location=loc)
+                seg._concealment = detail
+                current = [reasons, detail, text, seg]
+                segments.append(seg)
         return segments
+
+    def _run_reasons(self, r_el, resolver, pstyle, para_shd, cell_shd,
+                     page_hex, in_del, in_move):
+        """(reasons, detail, text) for one run, or None when the run
+        makes no concealment claim (design 3.3/3.4/3.5)."""
+        rpr = r_el.find(_w("rPr"))
+        rstyle = None
+        if rpr is not None:
+            rs = rpr.find(_w("rStyle"))
+            if rs is not None:
+                rstyle = rs.get(_w("val"))
+        props = resolver.effective(rpr, pstyle, rstyle)
+        flags = set()
+        if _docx_onoff(props.get("vanish")) is True:
+            flags.add("vanish")
+        for key in ("sz", "szCs"):
+            el = props.get(key)
+            if el is None:
+                continue
+            try:
+                half_points = int(el.get(_w("val")))
+            except (TypeError, ValueError):
+                continue
+            if half_points <= _TINY_FONT_MAX_HALF_POINTS:
+                flags.add("tiny_font")
+                break
+        if in_del or in_move or r_el.find(_w("delText")) is not None:
+            flags.add("tracked_deletion")
+        fg = resolver.resolve_fg(props.get("color"))
+        bg = src = None
+        highlight = props.get("highlight")
+        if highlight is not None:
+            name = (highlight.get(_w("val")) or "").strip().lower()
+            hexv = _WORD_HIGHLIGHT_COLORS.get(name) if name else None
+            if hexv:
+                bg, src = hexv, "highlight"
+        if bg is None:
+            bg, src = _resolve_background(props.get("shd"), para_shd,
+                                          cell_shd, page_hex)
+        if fg and bg and src:
+            step = abs(_docx_luma(fg) - _docx_luma(bg)) // 10000
+            if step < _LOW_CONTRAST_MAX_LUMA_STEP:
+                flags.add("low_contrast")
+        if not flags:
+            return None
+        reasons = tuple(r for r in CONCEALMENT_REASONS if r in flags)
+        detail = ",".join(reasons)
+        if "low_contrast" in flags:
+            detail += f" (fg={fg},bg={bg},src={src})"
+        text = "".join(
+            (c.text or "") for c in r_el
+            if c.tag in (_w("t"), _w("delText")))
+        return reasons, detail, text
 
 
 # ----------------------------------------------------------------------
@@ -681,15 +1115,17 @@ class SieveLensEngine:
         return self._analyze(segments, source="<text>")
 
     def _analyze(self, segments: List[Segment], source: str) -> Observation:
-        body_text = "".join(s.text for s in segments
-                            if s.kind in ("body", "css_hidden"))
+        body_text = "".join(
+            s.text for s in segments
+            if s.kind in ("body", "css_hidden", "docx_hidden"))
         oob_segments = [s for s in segments if s.kind in OOB_KINDS]
 
         h1 = 1
         zw_density = zero_width_density(body_text)
         h2 = 1 if zw_density >= self.zero_width_density_threshold else 0
         h3 = 1 if has_bidi_control(body_text) else 0
-        h4 = 1 if any(s.kind == "css_hidden" for s in segments) else 0
+        h4 = 1 if any(s.kind in ("css_hidden", "docx_hidden")
+                      for s in segments) else 0
         meaningful_oob = [s for s in oob_segments
                           if len(s.text.strip()) >= self.oob_min_length]
         h5 = 1 if meaningful_oob else 0
@@ -727,7 +1163,7 @@ class SieveLensEngine:
 
         zw_by_seg = []
         for s in segments:
-            if s.kind in ("body", "css_hidden"):
+            if s.kind in ("body", "css_hidden", "docx_hidden"):
                 n = sum(1 for c in s.text if ord(c) in ZERO_WIDTH)
                 if n > 0:
                     loc = f" ({s.location})" if s.location else ""
@@ -740,11 +1176,17 @@ class SieveLensEngine:
             else ["none"]
         )
 
-        css_hidden = [s for s in segments if s.kind == "css_hidden"]
-        ev["H4"] = [
-            f"{s.location or 'unknown'}: {s.text.strip()[:80]}"
-            for s in css_hidden
-        ] or ["none"]
+        h4_lines = []
+        for s in segments:
+            if s.kind == "docx_hidden":
+                detail = getattr(s, "_concealment", "unknown")
+                h4_lines.append(
+                    f"{s.location or 'unknown'}: DOCX concealment: "
+                    f"{detail}")
+            elif s.kind == "css_hidden":
+                h4_lines.append(
+                    f"{s.location or 'unknown'}: {s.text.strip()[:80]}")
+        ev["H4"] = h4_lines or ["none"]
 
         ev["H5"] = [
             f"[{s.kind}] {s.location or ''}: {s.text.strip()[:120]}"
@@ -1099,6 +1541,7 @@ __all__ = [
     "Extractor",
     "ReadLimits",
     "ExtractionRefused",
+    "CONCEALMENT_REASONS",
     "format_report",
     "format_report_html",
     "write_report_html",
