@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sieve-lens"
-version = "0.20.2"
+version = "0.21.0"
 description = "Invisible Prompt Observation Engine (Zero-Dependency, Deterministic)"
 readme = "README.md"
 authors = [
@@ -37,6 +37,9 @@ py-modules = ["sieve_lens"]
 
 [tool.setuptools.packages.find]
 include = ["sieve_lens_ext*"]
+
+[tool.setuptools.package-data]
+sieve_lens_ext = ["chartable_v1.json"]
 
 [project.optional-dependencies]
 pdf = ["pypdf>=4.0"]
