@@ -1,6 +1,6 @@
 [English](README.md) | **日本語**
 
-# Sieve Lens v0.20.1
+# Sieve Lens v0.20.2
 
 ## 💡 コンセプト
 

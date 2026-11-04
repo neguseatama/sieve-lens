@@ -1,5 +1,5 @@
 """
-Sieve Lens v0.20.1 - Invisible Prompt Observation Engine
+Sieve Lens v0.20.2 - Invisible Prompt Observation Engine
 
 Sieve Lens observes documents for invisible content that may be intended to
 influence AI-based evaluation systems. It reports evidence; it does not
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-__version__ = "0.20.1"
+__version__ = "0.20.2"
 
 
 # ----------------------------------------------------------------------
@@ -125,6 +125,9 @@ REFUSAL_CODES = frozenset({
     "encrypted",            # encrypted flag on a part we would read
     "malformed_xml",        # a read part is not well-formed
     "main_part_missing",    # word/document.xml absent
+    "unsupported_namespace",  # a WordprocessingML part outside the
+                            # transitional namespace (e.g. Strict
+                            # OOXML) would be silently unobserved
 })
 
 
@@ -317,6 +320,25 @@ def _parse_bounded_xml(data: bytes):
         raise ExtractionRefused("malformed_xml")
 
 
+def _require_word_namespace(root) -> None:
+    """Refuse a WordprocessingML part outside the transitional
+    namespace (v0.20.2).
+
+    Lens reads the transitional WordprocessingML namespace only. A
+    part whose root element carries any other namespace — Strict
+    OOXML included — parses fine but yields no observations: every
+    run in it would be silently unobserved. That state is refused as
+    an observation (code only, no part names) instead of being
+    reported as a successful parse. The parse failure of the same
+    part still wins over this check; the check is namespace-only, so
+    a root element with an unexpected local name in the standard
+    namespace keeps being observed.
+    """
+    tag = root.tag
+    if not (isinstance(tag, str) and tag.startswith("{" + _W_NS + "}")):
+        raise ExtractionRefused("unsupported_namespace")
+
+
 def _read_zip_part(zf, name: str, limits: ReadLimits,
                    budget: Dict[str, int]) -> Optional[bytes]:
     """Read one zip part under the L1 bounds.
@@ -498,15 +520,15 @@ _LOW_CONTRAST_MAX_LUMA_STEP = 20   # D = |dY| // 10000 < 20 (<= 19 fires)
 _TINY_FONT_MAX_HALF_POINTS = 2     # w:sz / w:szCs <= 2 (<= 1 pt)
 _STYLE_CHAIN_MAX_DEPTH = 100       # basedOn chain length; over -> refuse
 
-# Word's actual highlight palette (design answer 5). ECMA-376 5th ed.
-# prose lists CSS-derived values for the dark*/gray names; the values
-# below follow Word's rendering values (WdColorIndex / [MS-OE376]),
-# fixed by the design answer. Looked up case-insensitively.
+# Word's actual highlight palette (ECMA-376 Part 4,
+# ST_HighlightColor prose values; green was corrected from the CSS
+# value 008000 to the specified 00FF00 in v0.20.2, darkgreen stays
+# 008000). Looked up case-insensitively.
 _WORD_HIGHLIGHT_COLORS = {
     "black": "000000", "blue": "0000FF", "cyan": "00FFFF",
     "darkblue": "000080", "darkcyan": "008080", "darkgray": "808080",
     "darkgreen": "008000", "darkmagenta": "800080", "darkred": "800000",
-    "darkyellow": "808000", "green": "008000", "lightgray": "C0C0C0",
+    "darkyellow": "808000", "green": "00FF00", "lightgray": "C0C0C0",
     "magenta": "FF00FF", "red": "FF0000", "white": "FFFFFF",
     "yellow": "FFFF00",
 }
@@ -774,13 +796,18 @@ class _DocxExtractor(_Extractor):
             # observation, not an empty result (design 3.2).
             styles_root = self._read_optional_part(
                 zf, "word/styles.xml", limits, budget)
+            if styles_root is not None:
+                _require_word_namespace(styles_root)
             theme_root = self._read_optional_part(
                 zf, "word/theme/theme1.xml", limits, budget)
             settings_root = self._read_optional_part(
                 zf, "word/settings.xml", limits, budget)
+            if settings_root is not None:
+                _require_word_namespace(settings_root)
             resolver = _DocxStyleResolver(
                 styles_root, theme_root, settings_root)
             root = _parse_bounded_xml(doc)
+            _require_word_namespace(root)
             segments.extend(self._body_segments(
                 root, resolver, visible_kind="body",
                 location_prefix="paragraph"))
@@ -824,6 +851,7 @@ class _DocxExtractor(_Extractor):
             if data is None:
                 continue
             root = _parse_bounded_xml(data)
+            _require_word_namespace(root)
             for idx, note in enumerate(root.iter(_w(tag)), start=1):
                 if note.get(_w("type")):
                     continue
@@ -843,6 +871,7 @@ class _DocxExtractor(_Extractor):
         if data is None:
             return []
         root = _parse_bounded_xml(data)
+        _require_word_namespace(root)
         segments = []
         for idx, comment in enumerate(root.iter(_w("comment")), start=1):
             texts = [(t.text or "") for t in comment.iter(_w("t"))]
@@ -878,6 +907,7 @@ class _DocxExtractor(_Extractor):
         if data is None:
             return []
         root = _parse_bounded_xml(data)
+        _require_word_namespace(root)
         return self._body_segments(root, resolver,
                                    visible_kind=visible_kind,
                                    location_prefix=location_prefix)
@@ -1051,7 +1081,7 @@ class _DocxExtractor(_Extractor):
 # ----------------------------------------------------------------------
 
 class SieveLensEngine:
-    """Sieve Lens v0.20.1 observation engine."""
+    """Sieve Lens v0.20.2 observation engine."""
 
     def __init__(
         self,
