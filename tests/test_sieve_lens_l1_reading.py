@@ -67,6 +67,7 @@ _SPEC_REFUSAL_CODES = frozenset({
     "part_too_large", "total_too_large", "too_many_elements",
     "doctype_not_allowed", "unsupported_encoding", "duplicate_part",
     "encrypted", "malformed_xml", "main_part_missing",
+    "unsupported_namespace",
 })
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -961,10 +962,10 @@ class TestL1T12Pins(L1Base):
                 (REPO_ROOT / rel).read_bytes()).hexdigest()
             self.assertEqual(actual, pin, msg=rel)
 
-    def test_version_is_0_20_1_everywhere(self):
-        self.assertEqual(__version__, "0.20.1")
+    def test_version_is_0_20_2_everywhere(self):
+        self.assertEqual(__version__, "0.20.2")
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.20.1"', text)
+        self.assertIn('version = "0.20.2"', text)
 
     def test_core_imports_are_stdlib_only(self):
         src = (REPO_ROOT / "sieve_lens.py").read_text(encoding="utf-8")
