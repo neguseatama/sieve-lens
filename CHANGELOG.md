@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.19.1] - 2026-11-04
+
+### Added
+- **Version-consistency guard extension (L-1)**: the README title lines
+  (en/ja) and the `sieve_lens.py` module / `SieveLensEngine` docstrings
+  are now pinned to `__version__`. At 0.19.0 the READMEs read v0.17.0
+  and the docstrings v0.2.0 while the package published as 0.19.0; the
+  guard fails before the next release can repeat that.
+- **`docs/ARCHITECTURE.md` reality refresh**: the title no longer carries
+  a version, the boundary table reflects the extension reality (PDF via
+  `pypdf`, images/OCR via the Pillow/pytesseract extras, external CSS
+  local-only), and an H8 note documents that the geometry lane runs
+  beside the pipeline and stays outside the 7-bit mask.
+- **Known limitations 16-18 (en/ja)**: H8 is outside the mask, the
+  measured pypdf drift band for the `pdf_images` count pins (6.6.0
+  drifts, 6.21.4 green), and CSV/Excel inputs as roadmap candidates.
+
+### Changed
+- **CHANGELOG structure repair**: `# Changelog` H1 moved to the top of
+  the file (it sat mid-file after the 0.11.0 section), and a new
+  `MANIFEST.in` ships `CHANGELOG.md` in the sdist.
+- **Tests**: `TestPdfFormText` / `TestPdfFormWalk` are skipped when pypdf
+  is absent instead of erroring (previously a bare failure in
+  extension-less environments). Suite: 353 -> 356 (+3 version-guard
+  methods); the L1 version pin moved to 0.19.1.
+
+### Security / Non-destruction
+- No functional engine changes: frozen files (`schema.py`,
+  `control_syntax.py`, `geometry.py`, `redact_bridge.py`) are untouched,
+  zero new dependencies. Receipts and reports recorded before v0.19.1
+  stay reproducible.
+
+
 ## [0.19.0] - 2026-11-03
 
 ### Added

@@ -1,0 +1,507 @@
+From e92d0a823d9780e91194d66561fb89462dd28080 Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:06:02 +0000
+Subject: [PATCH 1/6] =?UTF-8?q?test:=20version-consistency=20guard=20exten?=
+ =?UTF-8?q?sion=20=E2=80=94=20README=20titles=20(en/ja)=20and=20module/eng?=
+ =?UTF-8?q?ine=20docstrings=20must=20match=20=5F=5Fversion=5F=5F=20(red)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L-1② (v0.19.1). At 0.19.0 the README titles still read v0.17.0 and the
+sieve_lens.py docstrings v0.2.0 while pyproject/__version__ said 0.19.0;
+the existing test only pinned the pyproject↔__version__ pair. The guard
+now covers all four user-facing claims (README en/ja title lines,
+module docstring, SieveLensEngine docstring).
+
+Written first: red at this boundary — 3 failed
+(test_readme_titles_match_version: en/ja as 2 subtests in 1 method,
+test_module_docstring_matches_version, test_engine_docstring_matches_version);
+green at the 0.19.1 bump commit.
+---
+ tests/test_version_consistency.py | 42 ++++++++++++++++++++++++++++++-
+ 1 file changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/tests/test_version_consistency.py b/tests/test_version_consistency.py
+index ceac3eb..1b33a47 100644
+--- a/tests/test_version_consistency.py
++++ b/tests/test_version_consistency.py
+@@ -1,7 +1,13 @@
+-"""Core __version__ and pyproject version must agree.
++"""Version claims across the distribution must agree with __version__.
+ 
+ A silent drift between the two would publish the wrong version to PyPI
+ (the publish workflow reads pyproject metadata). This pins them together.
++
++Extended in v0.19.1 (L-1): the user-facing version claims are pinned too —
++the README title lines (en/ja) and the sieve_lens.py module/engine
++docstrings. At 0.19.0 these still read v0.17.0 / v0.2.0 while
++pyproject/__version__ said 0.19.0; the guard now fails before the next
++release can repeat that.
+ """
+ 
+ import re
+@@ -12,6 +18,23 @@ import sieve_lens
+ 
+ ROOT = Path(__file__).resolve().parent.parent
+ 
++_VERSION_RE = r"(\d+\.\d+\.\d+)"
++
++
++def _readme_title_version(path: Path) -> str:
++    """Return the version in the '# Sieve Lens vX.Y.Z' title line."""
++    for line in path.read_text(encoding="utf-8").splitlines():
++        m = re.match(r"^# Sieve Lens v" + _VERSION_RE + r"\s*$", line)
++        if m:
++            return m.group(1)
++    raise AssertionError(f"'# Sieve Lens vX.Y.Z' title not found in {path.name}")
++
++
++def _docstring_version(doc) -> str:
++    m = re.search(r"Sieve Lens v" + _VERSION_RE, doc or "")
++    assert m, "docstring carries no 'Sieve Lens vX.Y.Z' claim"
++    return m.group(1)
++
+ 
+ class VersionConsistency(unittest.TestCase):
+     def test_pyproject_version_matches_core(self):
+@@ -20,6 +43,23 @@ class VersionConsistency(unittest.TestCase):
+         assert m, "pyproject version line not found"
+         self.assertEqual(m.group(1), sieve_lens.__version__)
+ 
++    def test_readme_titles_match_version(self):
++        for name in ("README.md", "README.ja.md"):
++            with self.subTest(readme=name):
++                self.assertEqual(
++                    _readme_title_version(ROOT / name), sieve_lens.__version__
++                )
++
++    def test_module_docstring_matches_version(self):
++        self.assertEqual(_docstring_version(sieve_lens.__doc__), sieve_lens.__version__)
++
++    def test_engine_docstring_matches_version(self):
++        from sieve_lens import SieveLensEngine
++
++        self.assertEqual(
++            _docstring_version(SieveLensEngine.__doc__), sieve_lens.__version__
++        )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+-- 
+2.47.3
+
+
+From 777e5d0b9b6c3a1cac86538e39178dd9f3303491 Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:07:53 +0000
+Subject: [PATCH 2/6] fix(test): skip TestPdfFormText / TestPdfFormWalk when
+ pypdf is missing (tests only)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L-2 (v0.19.1). The module docstring always promised 'Skipped
+automatically if pypdf is not installed', but these two classes lacked
+the guard: their fixtures call PdfWriter at test time, so a pypdf-less
+environment (macOS) failed with 6 NameError instead of skipping.
+@unittest.skipUnless(PYPDF_AVAILABLE, ...) — the same guard the other
+classes in this file already carry. No implementation change; with
+pypdf installed the six form tests run unchanged (16 passed verified).
+
+Boundary state at this commit: same red as commit 1 (3 version-guard
+methods). Measured with pypdf hidden: the 6 NameError failures are gone
+— form tests skip (39 skipped in the full run), remaining red is the
+version guard only.
+---
+ tests/test_sieve_lens_pdf.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tests/test_sieve_lens_pdf.py b/tests/test_sieve_lens_pdf.py
+index 607da18..8c0ce47 100644
+--- a/tests/test_sieve_lens_pdf.py
++++ b/tests/test_sieve_lens_pdf.py
+@@ -255,6 +255,7 @@ def _make_form_tree_pdf(path, body="", tree=None, draw=()):
+         writer.write(f)
+ 
+ 
++@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
+ class TestPdfFormText(unittest.TestCase):
+     """Form-internal Tr 3 text is currently reported only as visible body
+     (H4 false negative). These tests fail before the bounded form walk
+@@ -322,6 +323,7 @@ class TestPdfFormText(unittest.TestCase):
+         self.assertTrue(any("/Fur0" in e for e in obs.evidence["H4"]))
+ 
+ 
++@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
+ class TestPdfFormWalk(unittest.TestCase):
+     """GREEN-phase pins for the bounded Form walk (v0.15)."""
+ 
+-- 
+2.47.3
+
+
+From 989a2a45aeb076e07f2350f4a21e3bb6d912a36a Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:08:09 +0000
+Subject: [PATCH 3/6] =?UTF-8?q?docs:=20ARCHITECTURE.md=20reality=20refresh?=
+ =?UTF-8?q?=20=E2=80=94=20title,=20extension=20reality,=20H8=20pipeline=20?=
+ =?UTF-8?q?note?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L-5(a) + L-4(b) figure note (v0.19.1). Three reality fixes, no contract
+change:
+- the title no longer claims 'v0';
+- the Known Boundaries rows 'PDF not supported' / 'Images not supported'
+  / 'External CSS not resolved' described the 0.x core and are now stated
+  as they actually work: optional extensions (pypdf / Pillow / pytesseract
+  / tinycss2) reading outside the core's bounded reading (L1, future
+  L2/L3 scope), local CSS files only — remote resources are never
+  fetched (offline principle);
+- the pipeline diagram gains a note that the geometry lane (H8) runs
+  beside it, emits its own receipt and is not part of the 7-bit mask.
+---
+ docs/ARCHITECTURE.md | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 4f8104e..34491a7 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,4 +1,4 @@
+-# 🏛️ Sieve Lens v0 Architecture Specification
++# 🏛️ Sieve Lens Architecture Specification
+ 
+ ## Pipeline Overview
+ 
+@@ -24,6 +24,10 @@ v
+ v
+ [ Observation Report ]
+ 
++(H8 note: the geometry lane is an *optional extension lane* that runs
++ beside this pipeline and emits its own receipt — it is **not** part
++ of the 7-bit mask; installing it leaves H1-H7 semantics unchanged.)
++
+ 
+ ---
+ 
+@@ -95,8 +99,8 @@ The distinction is intentional. It preserves:
+ 
+ | Boundary | Reason |
+ |----------|--------|
+-| PDF not supported | Standard library cannot parse PDF reliably |
+-| Images not supported | OCR is out of scope for v0 |
+-| External CSS not resolved | Requires CSS cascade, out of scope |
++| PDF via optional extension | `sieve_lens_ext/pdf.py` reads through `pypdf` (pip extra `pdf`); the core engine stays zero-dependency, and extensions read through their own libraries outside the core's bounded reading (L1 — future L2/L3 scope) |
++| Images / OCR via optional extensions | `sieve_lens_ext/image_layers.py` (Pillow) and `sieve_lens_ext/ocr.py` (pytesseract) — pip extras `pdf-images` / `ocr`; OCR quality depends on the locally installed language packs |
++| External CSS: local files only | The core H4 lane inspects inline CSS only; the optional `html-css` extensions resolve `<style>` blocks and *local* `<link>` stylesheets — remote resources are never fetched (offline principle) |
+ | Semantic intent not evaluated | Requires language understanding |
+ | Character tables fixed | New techniques require code update |
+\ No newline at end of file
+-- 
+2.47.3
+
+
+From d00261a644de597e00ae2afc12baab992a3f829c Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:08:20 +0000
+Subject: [PATCH 4/6] docs: CHANGELOG structure repair (H1 first) + ship
+ CHANGELOG.md in the sdist
+
+L-6 (v0.19.1). The H1 'Changelog' sat in the middle of the file between
+the 0.12.0 and 0.11.0 sections while the file opened directly with
+'## [0.19.0]'; every release heading now lives under the single H1 at
+the top (newest-first order unchanged, section contents byte-identical).
+MANIFEST.in gains 'include CHANGELOG.md' so the sdist carries the
+changelog instead of only the wheel metadata.
+---
+ CHANGELOG.md | 3 ++-
+ MANIFEST.in  | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+ create mode 100644 MANIFEST.in
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 12e7376..7c111a6 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,3 +1,5 @@
++# Changelog
++
+ ## [0.19.0] - 2026-11-03
+ 
+ ### Added
+@@ -202,7 +204,6 @@
+ - Repository hygiene: the local virtualenv and audit artifacts are no longer
+   tracked.
+ 
+-# Changelog
+ 
+ ## [0.11.0] - 2026-10-06
+ 
+diff --git a/MANIFEST.in b/MANIFEST.in
+new file mode 100644
+index 0000000..fc49293
+--- /dev/null
++++ b/MANIFEST.in
+@@ -0,0 +1 @@
++include CHANGELOG.md
+-- 
+2.47.3
+
+
+From cc951d80bb6ccbcefb1c6c522daa6f5287a271ca Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:08:43 +0000
+Subject: [PATCH 5/6] =?UTF-8?q?docs:=20known=20limitations=2016-18=20?=
+ =?UTF-8?q?=E2=80=94=20H8=20outside=20the=20mask,=20pypdf=20measured=20ban?=
+ =?UTF-8?q?d,=20CSV/Excel=20roadmap=20(en/ja)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L-4(b) + L-7 + L-8(e) (v0.19.1). Three additions to 'Known Limitations'
+in both READMEs:
+16. H8 (geometry) is not represented in the 7-bit mask — geometry
+    findings are confirmed through the lane's own receipt, not through
+    mask/h_states/evidence (the mask 8-bit widening itself stays a
+    contract-v2 cross-series task: tray consumes the mask literally at
+    two places and the null-observation literal would change with it).
+17. The measured pypdf band: 6.6.0 drifts the pdf_images count pin
+    (4 != 3, fixture-side), 6.21.4 is all green — the CI pin stays open
+    in the ledger (floor maintained; measured band documented instead).
+18. CSV/Excel inputs are not supported (roadmap candidate — needs a
+    column-role specification first).
+---
+ README.ja.md | 14 ++++++++++++++
+ README.md    | 17 +++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/README.ja.md b/README.ja.md
+index 4c2a084..fcd0fcf 100644
+--- a/README.ja.md
++++ b/README.ja.md
+@@ -356,6 +356,20 @@ Sieve シリーズの JSON ゲートはすべて、宣言済みの単一契約
+    してあるため、どのパートが拒否を引き起こしたかを特定するには、他の
+    道具でファイルを再調査する必要があります。
+ 
++16. **H8（幾何）は 7 ビット mask の外。** mask は `H1H2H3H4-H5H6H7` のまま
++   で、幾何レーンの所見が運ばれることはありません。幾何の所見はレーン自身の
++   レシート（`audit_geometry` / `audit_pdf_geometry`）で確認するもので、
++   mask・h_states・evidence には出ません。
++
++17. **pypdf の版で pdf_images pins が動く。** 実測バンド: pypdf 6.6.0 では
++   `TestPdfImagesFormInlinePins` の計数 pin がずれ（4 != 3 — fixture 側の
++   計数でライブラリの不具合ではない）、pypdf 6.21.4 では全スイートが緑。
++   CI の pypdf pin は台帳に open として残します。
++
++18. **CSV/Excel 入力は非対応**（ロードマップ候補）。エンジンが読むのは
++   `.txt`/`.md`/`.html`/`.htm`/`.docx` と任意の PDF・画像拡張で、列指向
++   形式は列の役割の仕様を固めてから観測対象になります。
++
+ ---
+ 
+ ## 📄 ライセンス
+diff --git a/README.md b/README.md
+index e4b2305..4b08292 100644
+--- a/README.md
++++ b/README.md
+@@ -376,6 +376,23 @@ domain of **machine-readable vs. human-visible divergence**.
+    the code only — so identifying which part triggered a refusal
+    requires re-examining the file with other tooling.
+ 
++16. **H8 (geometry) is outside the 7-bit mask.** The mask stays
++   `H1H2H3H4-H5H6H7` and never carries the geometry lane's findings;
++   they are confirmed through the lane's own receipt
++   (`audit_geometry` / `audit_pdf_geometry`), not through
++   mask/h_states/evidence.
++
++17. **pypdf versions drift in the pdf_images pins.** Measured band:
++   with pypdf 6.6.0 the `TestPdfImagesFormInlinePins` count pin drifts
++   (4 != 3 — fixture-side counting, not a library defect); with pypdf
++   6.21.4 the whole suite is green. The CI pypdf pin stays open in the
++   ledger.
++
++18. **CSV/Excel inputs are not supported** (roadmap candidate). The
++   engine reads `.txt`/`.md`/`.html`/`.htm`/`.docx` plus the optional
++   PDF/image extensions; column-oriented formats need a column-role
++   specification to be settled before they can be observed.
++
+ ---
+ 
+ ## 📄 License
+-- 
+2.47.3
+
+
+From 99c16d68a6610d6cb321c6073954fa664361845a Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 3 Nov 2026 21:09:07 +0000
+Subject: [PATCH 6/6] docs: bump 0.19.1 (pyproject, __version__, README en/ja
+ titles, docstrings) + CHANGELOG [0.19.1]
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L-1① (v0.19.1). All four user-facing version claims join the published
+pair: pyproject version = __version__ = README.md/README.ja.md titles =
+sieve_lens.py module docstring = SieveLensEngine docstring = 0.19.1.
+CHANGELOG gains the [0.19.1] section.
+
+Includes one forced existing-test update, disclosed here (P-1): T12's
+version pin (test_version_is_0_19_0_everywhere) asserts __version__ and
+the pyproject line literally, so the bump re-points it to 0.19.1
+(renamed test_version_is_0_19_1_everywhere — same single test, same
+assertions, new pinned value). Missed in the pre-work breakdown; at
+every earlier boundary T12 stays 0.19.0-pinned and green, and this
+commit is the only one touching it.
+
+Boundary state: green — 356 collected (353 existing + 3 new guard
+methods); existing status quo preserved (354 passed / 1 skipped /
+1 failed = the documented pdf_images pin drift under pypdf 6.6.0,
+unchanged from before this batch).
+---
+ CHANGELOG.md                        | 37 +++++++++++++++++++++++++++++
+ README.ja.md                        |  2 +-
+ README.md                           |  2 +-
+ pyproject.toml                      |  2 +-
+ sieve_lens.py                       |  6 ++---
+ tests/test_sieve_lens_l1_reading.py |  6 ++---
+ 6 files changed, 46 insertions(+), 9 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7c111a6..8b15293 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,42 @@
+ # Changelog
+ 
++## [0.19.1] - 2026-11-04
++
++### Added
++- **Version-consistency guard extended (L-1)**: `test_version_consistency.py`
++  now pins all four user-facing version claims to `__version__` — the
++  README title lines (en/ja) and the `sieve_lens.py` module/engine
++  docstrings, next to the existing pyproject pin. At 0.19.0 the titles
++  still read `v0.17.0` and the docstrings `v0.2.0` while
++  pyproject/`__version__` said 0.19.0; the guard now fails before a
++  release can repeat that drift.
++
++### Fixed
++- **PDF form tests skip without pypdf (L-2)**: `TestPdfFormText` and
++  `TestPdfFormWalk` carry `@unittest.skipUnless(PYPDF_AVAILABLE, ...)`
++  as the module docstring always promised (tests-only change). A
++  pypdf-less environment no longer hits 6 `NameError` failures — the
++  six form tests skip instead.
++- **CHANGELOG structure repaired (L-6)**: the `# Changelog` H1 sat in
++  the middle of the file; every release heading now lives under the
++  single H1 at the top (order and section contents unchanged).
++  `MANIFEST.in` gains `include CHANGELOG.md`, so the sdist ships the
++  changelog.
++- **ARCHITECTURE.md brought back to reality (L-5(a))**: the "v0" title
++  claim removed; the stale `PDF not supported` / `Images not supported`
++  / `External CSS not resolved` boundary rows restated as they actually
++  work (optional extensions reading outside the core's bounded reading,
++  local CSS only — offline principle); the pipeline diagram notes the
++  geometry lane (H8) as an optional side lane outside the 7-bit mask.
++
++### Docs
++- Known limitations 16-18 (en/ja): H8 is outside the 7-bit mask (the
++  geometry receipt is the confirmation channel — L-4(b); the mask
++  widening itself stays a contract-v2 cross-series task), the measured
++  pypdf band (6.6.0 drifts the pdf_images count pin, 6.21.4 all green —
++  L-7 floor maintained), and CSV/Excel inputs as a roadmap candidate
++  (L-8(e)).
++
+ ## [0.19.0] - 2026-11-03
+ 
+ ### Added
+diff --git a/README.ja.md b/README.ja.md
+index fcd0fcf..cd32329 100644
+--- a/README.ja.md
++++ b/README.ja.md
+@@ -1,6 +1,6 @@
+ [English](README.md) | **日本語**
+ 
+-# Sieve Lens v0.17.0
++# Sieve Lens v0.19.1
+ 
+ ## 💡 コンセプト
+ 
+diff --git a/README.md b/README.md
+index 4b08292..81877c1 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ **English** | [日本語](README.ja.md)
+ 
+-# Sieve Lens v0.17.0
++# Sieve Lens v0.19.1
+ 
+ ## 💡 Concept
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index ece2c4e..8544620 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
+ 
+ [project]
+ name = "sieve-lens"
+-version = "0.19.0"
++version = "0.19.1"
+ description = "Invisible Prompt Observation Engine (Zero-Dependency, Deterministic)"
+ readme = "README.md"
+ authors = [
+diff --git a/sieve_lens.py b/sieve_lens.py
+index 28d56f5..d875ee7 100644
+--- a/sieve_lens.py
++++ b/sieve_lens.py
+@@ -1,5 +1,5 @@
+ """
+-Sieve Lens v0.2.0 - Invisible Prompt Observation Engine
++Sieve Lens v0.19.1 - Invisible Prompt Observation Engine
+ 
+ Sieve Lens observes documents for invisible content that may be intended to
+ influence AI-based evaluation systems. It reports evidence; it does not
+@@ -31,7 +31,7 @@ from pathlib import Path
+ from typing import Dict, List, Optional, Tuple
+ 
+ 
+-__version__ = "0.19.0"
++__version__ = "0.19.1"
+ 
+ 
+ # ----------------------------------------------------------------------
+@@ -617,7 +617,7 @@ class _DocxExtractor(_Extractor):
+ # ----------------------------------------------------------------------
+ 
+ class SieveLensEngine:
+-    """Sieve Lens v0.2.0 observation engine."""
++    """Sieve Lens v0.19.1 observation engine."""
+ 
+     def __init__(
+         self,
+diff --git a/tests/test_sieve_lens_l1_reading.py b/tests/test_sieve_lens_l1_reading.py
+index 9e8fca8..aa31f24 100644
+--- a/tests/test_sieve_lens_l1_reading.py
++++ b/tests/test_sieve_lens_l1_reading.py
+@@ -958,10 +958,10 @@ class TestL1T12Pins(L1Base):
+                 (REPO_ROOT / rel).read_bytes()).hexdigest()
+             self.assertEqual(actual, pin, msg=rel)
+ 
+-    def test_version_is_0_19_0_everywhere(self):
+-        self.assertEqual(__version__, "0.19.0")
++    def test_version_is_0_19_1_everywhere(self):
++        self.assertEqual(__version__, "0.19.1")
+         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+-        self.assertIn('version = "0.19.0"', text)
++        self.assertIn('version = "0.19.1"', text)
+ 
+     def test_core_imports_are_stdlib_only(self):
+         src = (REPO_ROOT / "sieve_lens.py").read_text(encoding="utf-8")
+-- 
+2.47.3
+
