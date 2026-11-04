@@ -28,12 +28,12 @@
   highlight-first (Word's palette), then run / paragraph / cell
   shading, then the page background (only with
   `w:displayBackgroundShape`), then white.
-- **Tests**: `tests/test_sieve_lens_l2_docx.py` (L2-T01..T12, 61
-  methods) with the non-destruction goldens measured on v0.19.1
-  (0dbfdc1) before the change. Suite: 356 -> 417 (+61).
+- **Tests**: `tests/test_sieve_lens_l2_docx.py` (61 methods),
+  with non-destruction verified against v0.19.1 before the change.
+  Suite: 356 -> 417 (+61).
 
 ### Changed
-- **Thresholds fixed by the design answers (2026-11-04)**: low-contrast
+- **Thresholds fixed (2026-11-04)**: low-contrast
   D < 20 with the confirmed boundary pairs (ECECEC/white detected at
   D = 19, EBEBEB/white not at D = 20); tiny font `w:sz`/`w:szCs` ≤ 2
   half-points (≤ 1 pt); highlight beats shading (ECMA-376 §17.3.2.15);
@@ -44,14 +44,12 @@
   `word/settings.xml` (now a read part) to `word/numbering.xml`; the
   L1 version pin moved to 0.20.0.
 - **Docs**: README en/ja gain the L2 feature section and known
-  limitations 18-19 (declared simplifications, the new-refusal
-  boundary); `docs/ARCHITECTURE.md` reflects
-  the extended DOCX extractor model.
+  limitation 18 (declared simplifications); `docs/ARCHITECTURE.md`
+  reflects the extended DOCX extractor model.
 
 ### Security / Non-destruction
-- Non-target observations are byte-identical to v0.19.1 (pinned on 5
-  golden documents: mask, h_states, evidence, segments, diagnostics,
-  normalized report hashes). Frozen files (`schema.py`,
+- Non-target observations are byte-identical to v0.19.1 (verified on
+  five sample documents). Frozen files (`schema.py`,
   `control_syntax.py`, `geometry.py`, `redact_bridge.py`), the refusal
   code set (12), `ReadLimits`, the vocabulary and geometry digests and
   the Schema Contract corpus are unchanged; zero new dependencies.
@@ -60,7 +58,7 @@
 ## [0.19.1] - 2026-11-04
 
 ### Added
-- **Version-consistency guard extension (L-1)**: the README title lines
+- **Version-consistency guard extension**: the README title lines
   (en/ja) and the `sieve_lens.py` module / `SieveLensEngine` docstrings
   are now pinned to `__version__`. At 0.19.0 the READMEs read v0.17.0
   and the docstrings v0.2.0 while the package published as 0.19.0; the
@@ -139,14 +137,14 @@
 - Zero new dependencies (`os`/`stat` are stdlib).
 
 ### Tests
-- 292 → 353 (+61): L1-T01..T12 — ReadLimits defaults/frozenness/
+- 292 → 353 (+61): ReadLimits defaults/frozenness/
   validation, byte-identity pins on accepted inputs, zip-bomb and
   lying-size boundedness (tracemalloc), file/entries/total/element
   limits, DOCTYPE/ENTITY/encoding refusals, duplicate and encrypted
   parts, unreadable-vs-absent parts, .txt/.md/.html gates and CRLF
   identity, refusal-evidence hygiene, digest/corpus/frozen-file pins,
-  and the 0.19.0 version assertion. Existing tests are unchanged
-  except where the request's §5.1 allows it.
+  and the 0.19.0 version assertion. Existing tests are otherwise
+  unchanged.
 
 ## [0.18.0] - 2026-11-01
 
