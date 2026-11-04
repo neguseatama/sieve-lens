@@ -4,7 +4,8 @@ Sieve Lens ships the character table the Sieve tools share as
 `sieve_lens_ext/chartable_v1.json`. The copy in this package is the
 standard; other Sieve tools carry byte-exact copies pinned to this
 file by sha256, and changes to the standard are made here — never by
-editing a copy.
+editing a copy. Coverage is fixed by this file: a new invisible
+technique requires a new table version, not a runtime extension.
 
 ## What the table holds
 
@@ -15,6 +16,9 @@ editing a copy.
 | `fullwidth_ascii` | the fullwidth ASCII range U+FF01–U+FF5E and its ASCII base U+0021 |
 | `spaces` | the folding spaces U+00A0 and U+3000 |
 | `dashes` | the folding dashes U+2010–U+2015, U+2212, U+30FC and U+FF70 |
+
+The twins are non-ASCII → ASCII only: look-alike pairs inside ASCII
+(O/0, l/1) and CJK look-alikes are out of scope.
 
 The invisible characters are removed, the twins and the fullwidth
 range fold to their ASCII twins, the folding spaces fold to the ASCII

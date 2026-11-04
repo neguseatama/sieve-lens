@@ -117,6 +117,26 @@ module establishes the pinned source of the standard inside Lens. See
 
 ---
 
+## Geometry Observation Scope
+
+The geometry lanes (v0.17 HTML, v0.18 PDF subscan) measure how a
+document positions text, not what it says. Their scope:
+
+- CSS lengths are measured in px and unitless numbers only; em/rem/%/pt
+  are skipped, and `@media` blocks are not descended into.
+- Inline style attributes are scanned with the standard library;
+  `<style>` blocks and local `<link>` stylesheets are parsed when the
+  optional CSS extras are installed (remote resources are never
+  fetched).
+- The PDF subscan reads un-transformed positions: relative moves and
+  the transform matrix are not composed into the observed values, and
+  fills matching the page background are not observed.
+- Geometry findings never enter the 7-bit mask. They are confirmed
+  through each lane's own receipt (`audit_geometry` /
+  `audit_pdf_geometry`).
+
+---
+
 ## Known Boundaries
 
 | Boundary | Reason |
@@ -126,3 +146,5 @@ module establishes the pinned source of the standard inside Lens. See
 | External CSS: local files only | The core H4 lane inspects inline CSS only; the optional `html-css` extensions resolve `<style>` blocks and *local* `<link>` stylesheets — remote resources are never fetched (offline principle) |
 | Semantic intent not evaluated | Requires language understanding |
 | Character tables fixed | New techniques require code update |
+| PDF Form XObject nesting capped at 8 levels | Deeper nests are skipped (cycle protection in the content-stream walk) |
+| DOCX hidden-text resolution is simplified | Toggles disagreeing across several levels, table-style formatting and some width/position tricks are out of scope |

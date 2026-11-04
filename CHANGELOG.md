@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.21.1] - 2026-11-05
+
+### Changed
+- **Public README refresh (en/ja): the known-limitations list was
+  reorganized.** The 18-item list is now a 4-item "Good to know"
+  section (observation-not-judgment, OCR language packs, DOCX
+  Transitional-only, kanji shared with Chinese), and the requirement
+  for PDF report charts (Chrome/Chromium with kaleido 1.x) moved to
+  the installation section. The removed detail stays in `docs/`: the
+  geometry measurement scope is consolidated in
+  `docs/ARCHITECTURE.md` ("Geometry Observation Scope"), the
+  character-table scope (fixed coverage, non-ASCII → ASCII twins) in
+  `docs/CHARTABLE.md`, and the DOCX simplified-rule boundary and the
+  Form XObject depth cap joined the Known Boundaries table. Facts,
+  numbers and version claims are unchanged; code, tests (beyond the
+  version pins) and bundled files are untouched.
+
 ## [0.21.0] - 2026-11-05
 
 ### Added

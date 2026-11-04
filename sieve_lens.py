@@ -1,5 +1,5 @@
 """
-Sieve Lens v0.21.0 - Invisible Prompt Observation Engine
+Sieve Lens v0.21.1 - Invisible Prompt Observation Engine
 
 Sieve Lens observes documents for invisible content that may be intended to
 influence AI-based evaluation systems. It reports evidence; it does not
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-__version__ = "0.21.0"
+__version__ = "0.21.1"
 
 
 # ----------------------------------------------------------------------
@@ -1081,7 +1081,7 @@ class _DocxExtractor(_Extractor):
 # ----------------------------------------------------------------------
 
 class SieveLensEngine:
-    """Sieve Lens v0.21.0 observation engine."""
+    """Sieve Lens v0.21.1 observation engine."""
 
     def __init__(
         self,

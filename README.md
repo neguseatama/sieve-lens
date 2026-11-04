@@ -1,6 +1,6 @@
 **English** | [日本語](README.ja.md)
 
-# Sieve Lens v0.21.0
+# Sieve Lens v0.21.1
 
 ## 💡 Concept
 
@@ -164,6 +164,8 @@ pip install "sieve-lens[pdf] @ git+https://github.com/neguseatama/sieve-lens.git
 pip install "sieve-lens[ocr] @ git+https://github.com/neguseatama/sieve-lens.git"
 ```
 
+PDF report charts require Chrome/Chromium when generated with kaleido 1.x.
+
 ---
 
 ## 💻 Quick Start
@@ -279,26 +281,12 @@ domain of **machine-readable vs. human-visible divergence**.
 
 ---
 
-## ⚠️ Known Limitations
+## Good to know
 
-1. **Observation, not removal.** Concealment is found and reported; masking is Sieve Redact's domain.
-2. **Semantic intent is not evaluated.** A visible but manipulative prompt is out of scope.
-3. **Only inline CSS is inspected.** External stylesheets are not resolved.
-4. **Character-table coverage is fixed.** New invisible techniques require updating the tables.
-5. **An observation engine, not a detector.** Findings should be confirmed by human review.
-6. **Homoglyph twins are non-ASCII → ASCII only.** Lookalike pairs inside ASCII (O/0, l/1) and CJK lookalikes are out of scope.
-7. **Missing OCR language packs fail silently.** No error is raised; OCR simply yields no text.
-8. **PDF Form XObject nesting is capped at 8 levels.** Deeper nests are skipped.
-9. **Kanji are shared with Chinese.** A Chinese-language document may be detected as Japanese.
-10. **PDF report charts need Chrome/Chromium** (when generated with kaleido 1.x).
-11. **Control-syntax matching is surface-only.** Paraphrasing, letter-spacing and glyph substitution are not seen. A finding is a record, not proof of intent.
-12. **Geometry measures px and unitless lengths only.** em/rem/%/pt are skipped and `@media` blocks are not descended into.
-13. **PDF geometry uses un-transformed positions.** Relative moves and the transform matrix are not composed; fills matching the page background are not observed.
-14. **Unknown keys are refused.** Vocabulary/threshold files reject fields outside the contract; duplicate or invalid values fall back to the built-in defaults.
-15. **Input guarding covers the core formats only.** PDFs and images are read by their own libraries, so a refusal's exact cause needs a second look with other tooling.
-16. **Geometry findings never enter the mask.** They are confirmed through each lane's own receipt (`audit_geometry` / `audit_pdf_geometry`).
-17. **CSV/Excel are not supported** (roadmap candidate) until column roles are specified.
-18. **DOCX hidden text uses simplified rules.** Toggles disagreeing across several levels, table-style formatting, and some width/position tricks are out of scope. Strict-OOXML documents are refused (`unsupported_namespace`); re-save them in the standard format to observe their content.
+1. **Observation, not judgment.** Lens reports surface facts — the final confirmation is human. Visible text tricks such as paraphrasing are outside the scan.
+2. **OCR needs language packs.** Without the pack for a language, OCR text is simply 0 — no error is raised.
+3. **DOCX means the standard Transitional format.** Strict-OOXML documents are refused (`unsupported_namespace`) — re-save them in the standard format and their content becomes observable.
+4. **Kanji are shared between Japanese and Chinese.** A Chinese-language document may be detected as Japanese.
 
 ---
 

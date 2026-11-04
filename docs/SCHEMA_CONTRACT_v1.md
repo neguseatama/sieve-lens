@@ -106,6 +106,8 @@ schema, nested arrays, `anyOf`/conditionals. Schema-side completion
   wins
 - Unknown data keys are **rejected, not ignored** (gatekeeper stance:
   a future producer must extend the contract explicitly)
+- Duplicate keys, `NaN`/`Infinity` and over-size inputs refuse the
+  file, and the built-in defaults apply instead
 - Message language is per-tool (Lens: English, Redact: Japanese); the
   contract pins pointers and semantics, not wording
 

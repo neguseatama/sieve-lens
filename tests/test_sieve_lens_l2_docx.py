@@ -1226,10 +1226,10 @@ class TestL2T12Pins(L2Base):
                     (REPO_ROOT / rel).read_bytes()).hexdigest()
                 self.assertEqual(actual, pin)
 
-    def test_version_is_0_21_0(self):
-        self.assertEqual(__version__, "0.21.0")
+    def test_version_is_0_21_1(self):
+        self.assertEqual(__version__, "0.21.1")
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.21.0"', text)
+        self.assertIn('version = "0.21.1"', text)
 
     def test_core_imports_stdlib_only(self):
         import ast
