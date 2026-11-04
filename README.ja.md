@@ -11,7 +11,7 @@
 [Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
 **「機械可読性と人間可視性の乖離」** という新しいドメインへ拡張しました。
 
-[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
+[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/tests.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 

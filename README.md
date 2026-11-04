@@ -1,6 +1,22 @@
-**English** | [日本語](README.ja.md)
-
 # Sieve Lens v0.21.1
+
+**Invisible Prompt Observation Engine**
+
+*Sieve Lens is not a tool that distrusts AI.*  
+*It is a tool that helps AI receive trustworthy input.*
+
+> Zero-dependency, deterministic, explainable observation of invisible content
+> in documents (resumes, submissions, reports) that may be intended to
+> influence AI-based evaluation systems.
+
+Extends the [Sieve](https://github.com/neguseatama/sieve-core) series to the
+domain of **machine-readable vs. human-visible divergence**.
+
+[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/tests.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+
+**English** | [日本語](README.ja.md)
 
 ## 💡 Concept
 
@@ -260,24 +276,6 @@ Exports an observation catalog (JSON) that
   letters -> ASCII, 102 entries) carry a `twin` field, which Redact converts
   into a replacement rule; invisible characters become deletions.
 - Lens and Redact share the same definition of what counts as invisible.
-
-
-
-**Invisible Prompt Observation Engine**
-
-*Sieve Lens is not a tool that distrusts AI.*  
-*It is a tool that helps AI receive trustworthy input.*
-
-> Zero-dependency, deterministic, explainable observation of invisible content
-> in documents (resumes, submissions, reports) that may be intended to
-> influence AI-based evaluation systems.
-
-Extends the [Sieve](https://github.com/neguseatama/sieve-core) series to the
-domain of **machine-readable vs. human-visible divergence**.
-
-[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 
 ---
 
