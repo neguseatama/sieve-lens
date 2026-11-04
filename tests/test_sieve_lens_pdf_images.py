@@ -26,6 +26,22 @@ try:
 except ImportError:
     PYPDF_AVAILABLE = False
 
+
+def _pypdf_version_tuple():
+    """(major, minor, patch) of the installed pypdf, or () if absent."""
+    try:
+        from importlib.metadata import version
+        return tuple(int(p) for p in version("pypdf").split(".")[:3])
+    except Exception:
+        return ()
+
+
+# Measured drift band (README limitation 17): the page.images
+# form/inline enumeration that the count pin relies on landed in
+# pypdf 6.19.0 — measured green on 6.19.0 / 6.21.4, and the count
+# drifts (4 != 3) on 6.6.0.
+PYPDF_FORM_ENUM_AVAILABLE = _pypdf_version_tuple() >= (6, 19, 0)
+
 try:
     from PIL import Image  # noqa: F401
     PIL_AVAILABLE = True
@@ -299,6 +315,11 @@ class TestPdfImagesFormInlinePins(unittest.TestCase):
             s[NameObject("/SMask")] = writer._add_object(mask)
         return writer._add_object(s)
 
+    @unittest.skipUnless(
+        PYPDF_FORM_ENUM_AVAILABLE,
+        "count pin needs pypdf>=6.19.0 form/inline enumeration "
+        "(6.6.0 drifts 4 != 3 — README limitation 17)",
+    )
     def test_form_and_inline_images_reach_pipeline(self):
         import tempfile
         from pathlib import Path as _P
