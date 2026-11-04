@@ -44,8 +44,8 @@
   `word/settings.xml` (now a read part) to `word/numbering.xml`; the
   L1 version pin moved to 0.20.0.
 - **Docs**: README en/ja gain the L2 feature section and known
-  limitations 19-21 (declared simplifications, the new-refusal
-  boundary, the low-contrast rule); `docs/ARCHITECTURE.md` reflects
+  limitations 18-19 (declared simplifications, the new-refusal
+  boundary); `docs/ARCHITECTURE.md` reflects
   the extended DOCX extractor model.
 
 ### Security / Non-destruction

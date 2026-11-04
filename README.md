@@ -140,39 +140,11 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   defaults apply unless a file override is given). The receipt records
   rule, raw value, measured number, threshold, and position - facts
   only, no intent judgment.
-- **Bounded document reading (L1: safe reading)** (since v0.19)  
-  The core reading paths (`.txt` / `.md` / `.html` / `.htm` / `.docx`)
-  are guarded by `ReadLimits`, a frozen dataclass pinning five
-  positive-integer budgets: file size (64 MiB), zip entries (10,000),
-  decompressed part size (32 MiB), per-call total (128 MiB), and XML
-  elements (1M). Hostile inputs are refused before parsing through a
-  closed set of 12 codes: non-regular files, oversized files, too many
-  entries, oversized or duplicate (case-insensitive) parts, encrypted
-  flags, DOCTYPE/ENTITY, unsupported encodings (UTF-16 is refused),
-  malformed XML, and a missing main part. A refusal is non-destructive:
-  the receipt becomes a null observation (H1 = 0, mask `0000-000`)
-  whose evidence carries the refusal code only — never part names,
-  document content, or paths. Accepted inputs are byte-identical to
-  v0.18.0.
-- **DOCX concealment observation (L2)** (since v0.20)  
-  The DOCX extractor resolves the effective run formatting
-  (docDefaults → paragraph style chain → character style chain →
-  direct formatting, memoized) and splits runs that a human reader
-  would not see out of the visible text into `docx_hidden` segments:
-  `vanish` (hidden-text formatting), `low_contrast` (Rec.709 luma step
-  D < 20 between the resolved foreground and background, with the
-  resolved colours and source in the evidence), `tiny_font`
-  (`w:sz`/`w:szCs` ≤ 2 half-points), and `tracked_deletion` (text
-  inside `w:del` / `w:moveFrom`, or `w:delText` outside `w:del`).
-  Backgrounds resolve highlight-first (Word's palette), then run /
-  paragraph / cell shading, then the page background (only when
-  `w:displayBackgroundShape` is set), then white. Theme colours
-  resolve through `w:clrSchemeMapping` and `theme1.xml`. The three
-  formatting parts (`word/styles.xml`, `word/theme/theme1.xml`,
-  `word/settings.xml`) are read through the same L1 bounds and shared
-  budget; a malformed one refuses (see limitation 20). The engine
-  reports the fact that text is invisible-in-principle; it never
-  judges whether it is abusive.
+- **Bounded document reading (L1: safe reading)** (v0.19+)
+  Every input is checked before it is parsed. Oversized, encrypted or broken files are refused with one of 12 clear reason codes — and nothing else travels out: no content, no file names.
+
+- **DOCX concealment observation (L2)** (v0.20+)
+  Finds the invisible text a `.docx` can carry: hidden-text marks, tiny fonts, letters painted into the background, and leftovers of tracked deletions — reported as separate `hidden` segments next to the body text. Background colour is resolved through Word's highlight, shading and theme settings. The engine reports the fact that text cannot be seen; it never judges intent. Documents with broken style/theme/settings parts are refused instead of ignored.
 
 ## 📦 Installation
 
@@ -184,7 +156,7 @@ pip install sieve-lens
 pip install "sieve-lens[pdf]"
 pip install "sieve-lens[ocr]"
 
-# Or the latest from GitHub (may include changes not yet on PyPI)
+# Or the latest from GitHub
 pip install "sieve-lens[pdf] @ git+https://github.com/neguseatama/sieve-lens.git"
 pip install "sieve-lens[ocr] @ git+https://github.com/neguseatama/sieve-lens.git"
 ```
@@ -260,65 +232,31 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
 
 ## 📋 Sieve Schema Contract v1 (v0.18.0)
 
-All JSON gates in the Sieve tools share one declared contract
-(`docs/SCHEMA_CONTRACT_v1.md`, canonical engine
-`sieve_lens_ext/schema.py`):
+Vocabulary and threshold JSON files follow one strict contract shared by the
+Sieve tools (details in `docs/SCHEMA_CONTRACT_v1.md`):
 
-- **Strict JSON layer** — duplicate object keys, `NaN`/`Infinity`, a
-  UTF-8 BOM and files over the 1 MiB cap are refused; for the Lens
-  vocab/thresholds loaders "refused" means the documented fallback to
-  the embedded defaults (the receipt's `vocab_source`/sha256 shows it)
-- **Declared schemas** — the control-vocab and geometry-threshold
-  documents are validated against explicit schema declarations
-  (`CONTROL_VOCAB_SCHEMA`, `GEOMETRY_THRESHOLDS_SCHEMA`), separated
-  into a pure `validate_*` (structure, RFC 6901 JSON Pointer errors)
-  and a `build_*` step (default filling, regex compilation)
-- **Gatekeeper stance** — unknown keys are refused, not ignored
-  (behavior change: mistyped `version`/`lane` values and unknown
-  fields now raise `ValueError` instead of being silently skipped)
-- **Receipt non-destruction** — the content digests of the embedded
-  vocab and thresholds are unchanged by the refactor (pinned in
-  tests), so every receipt recorded before v0.18.0 stays reproducible
-- **Conformance corpus** — 44 accept/reject cases
-  (`tests/corpus/schema_contract_v1.json`) pin the contract; replicas
-  in the Redact and Crowd test suites are pinned by sha256
-- **Bounded validation** — recursion follows the schema depth only,
-  never the input depth; a 50,000-deep document is refused near the
-  root, a 100,000-item array is checked iteratively
+- **Strict** — duplicate keys, `NaN`/`Infinity` and inputs over 1 MiB are refused; the built-in defaults apply instead
+- **Refuse, don't ignore** — keys outside the contract are rejected
+- **Conformance corpus** — the contract is verified by 44 accept/reject cases
 
 ---
 
 ## 🔗 Redact Bridge (v0.12.0)
 
-`sieve_lens_ext.redact_bridge` exports an observation catalog that
+Exports an observation catalog (JSON) that
 [Sieve Redact](https://github.com/neguseatama/sieve-redact) consumes directly:
 
     python -m sieve_lens_ext.redact_bridge input.txt catalog.json
     python -m sieve_redact input.txt -o clean.txt --from-lens catalog.json
 
-- Catalog format (version 1): `observations[]` with `kind`, `codepoint`,
-  `count`, `positions` (first-seen order).
-- Look-alike characters (Cyrillic/Greek -> Latin, full-width digits
-  and letters -> ASCII, 102 entries) carry an optional
-  `twin` field, which Redact converts into a replacement rule; invisible
-  characters become deletions.
-- Deterministic, stdlib-only. The bridge imports the core character tables,
-  so the two engines can never disagree on what counts as invisible.
-- End-to-end check: `python3 probe_redact_roundtrip.py`
-  (synthetic input -> catalog -> redact -> re-observe clean).
+- The catalog carries the kind, codepoint, count and positions (first-seen
+  order) of each observation.
+- Look-alike characters (Cyrillic/Greek -> Latin, full-width digits and
+  letters -> ASCII, 102 entries) carry a `twin` field, which Redact converts
+  into a replacement rule; invisible characters become deletions.
+- Lens and Redact share the same definition of what counts as invisible.
 
-## v0.11.0 Highlights
 
-- **Fixed critical regressions**: PDF embedded-image analysis and HTML body
-  text extraction (which had silently disabled H2/H3/H6/H7 detection), and
-  EXIF UserComment/SubIFD reading.
-- **Security**: report output is now HTML-escaped (untrusted specimens can no
-  longer inject markup into dashboards/PDF reports), and local stylesheet
-  resolution is confined to the specimen's directory tree.
-- **Deterministic PDF reports**: byte-identical output across builds,
-  verified in CI (fixed dcterms dates + pinned XMP DocumentID).
-- **Chained extensions**: `sieve_lens_ext.image_layers` now composes with
-  `sieve_lens_ext.ocr` automatically; new `SieveLensEngine.get_extractor()`.
 
 **Invisible Prompt Observation Engine**
 
@@ -340,110 +278,25 @@ domain of **machine-readable vs. human-visible divergence**.
 
 ## ⚠️ Known Limitations
 
-1. **Observation, not removal.** Concealment found in PDFs and images is reported; masking is Sieve Redact's domain (deliberate role split).
-2. **Semantic intent is not evaluated.** A visible but manipulative prompt is
-   outside the scope of this tool.
-3. **Only inline CSS is inspected.** External stylesheets and CSS classes are
-   not resolved.
-4. **Character-table coverage is fixed.** New invisible techniques require
-   updating the tables.
-5. **This is an observation engine, not a detector.** Findings should always
-   be confirmed by human review.
-6. **Homoglyph twins are non-ASCII -> ASCII only** — lookalike pairs
-   inside ASCII (O/0, l/1) and CJK lookalikes are out of scope
-
-7. **Missing OCR language packs fail silently.** If the configured language
-   pack is not installed, OCR yields no text without an error; metadata
-   extraction is unaffected
-
-8. **PDF Form XObject nesting is capped.** Text inside Form XObjects is scanned with a cycle-safe walk; nesting deeper than 8 levels is skipped.
-
-9. **CJK script sharing:** kanji are shared between Japanese and Chinese, so a Chinese-language document may be detected as Japanese.
-10. **kaleido 1.x requires Chrome/Chromium:** PDF report charts need a local Chrome/Chromium runtime when generated with kaleido 1.x.
-
-11. **Control-syntax matching is surface-literal.** The audit lane matches a
-   fixed vocabulary (literal substring by default, regex opt-in);
-   paraphrased, spaced-out, or glyph-substituted instructions and
-   non-listed phrases are out of scope. A finding records the surface
-   pattern and its backing status — it is not evidence of intent
-
-12. **Geometry thresholds are unit-scoped.** The geometry lane measures
-   px and unitless lengths only (em/rem/%/pt are skipped), does not
-   convert `scale()` percentage arguments, and does not descend into
-   `@media` blocks; exponent notation and negative values are outside
-   the observation scope.
-
-13. **PDF geometry positions are un-composed.** The PDF subscan checks
-   `Tm` operands of the un-transformed text space; relative moves
-   (`Td`/`TD`/`T*`/`TL` accumulation) and the graphics CTM (`cm`) are
-   not composed into the position, and same-color-as-background fills
-   are not observed (future vocabulary).
-
-14. **Schema gates refuse unknown keys.** The control-vocab and
-   geometry-threshold documents reject fields outside Contract v1
-   instead of ignoring them; a future producer must extend the
-   contract explicitly. Duplicate keys / `NaN` / `Infinity` in vocab
-   or thresholds files now fall back to the embedded defaults instead
-   of being accepted with last-wins semantics.
-
-15. **L1 guards the core extractor only.** `ReadLimits` and the
-   closed-set refusals protect the core reading paths
-   (`.txt`/`.md`/`.html`/`.htm`/`.docx`); the PDF, OCR, image-layer,
-   and report extensions read through their own libraries
-   (`pypdf`, `pytesseract`, `Pillow`, ...) and are outside L1
-   (future L2/L3 scope). Refusal evidence is deliberately coarse —
-   the code only — so identifying which part triggered a refusal
-   requires re-examining the file with other tooling.
-
-16. **H8 (geometry) is outside the 7-bit mask.** The mask stays
-   `H1H2H3H4-H5H6H7` and never carries the geometry lane's findings;
-   they are confirmed through the lane's own receipt
-   (`audit_geometry` / `audit_pdf_geometry`), not through
-   mask/h_states/evidence.
-
-17. **pypdf versions drift in the pdf_images pins.** Measured band:
-   with pypdf 6.6.0 the `TestPdfImagesFormInlinePins` count pin drifts
-   (4 != 3 — fixture-side counting, not a library defect); with pypdf
-   6.21.4 the whole suite is green. The CI pypdf pin stays open in the
-   ledger.
-
-18. **CSV/Excel inputs are not supported** (roadmap candidate). The
-   engine reads `.txt`/`.md`/`.html`/`.htm`/`.docx` plus the optional
-   PDF/image extensions; column-oriented formats need a column-role
-   specification to be settled before they can be observed.
-
-19. **DOCX concealment simplifications (declared, L2).** Toggle
-   properties (`w:vanish`) resolve by plain override — the last
-   explicit level wins — while ECMA-376 resolves toggles by XOR
-   *between* style levels (first explicit value wins *within* a
-   `basedOn` chain; docDefaults=true forces on). The two disagree only
-   when the same toggle is explicit at more than one level. Table
-   styles (conditional formatting) are not resolved; `w:w`,
-   `w:spacing`, `w:position`, `w:fitText` concealment is not observed;
-   `w:moveFromRangeStart/End` range-only deletions are not covered;
-   whitespace-only concealed runs stay in the visible text; properties
-   that cannot be resolved (pattern shading with fill ≠ colour,
-   invalid values) are not claimed. Strict-OOXML-namespace documents
-   still parse to an empty observation with `parsed successfully`
-   (recorded — a follow-up patch release is expected to refuse them as
-   unobserved).
-
-20. **Some v0.19.1-accepted documents now refuse (intended, L2).** The
-   three formatting parts (`word/styles.xml`, `word/theme/theme1.xml`,
-   `word/settings.xml`) are now read through the same L1 bounds and
-   the same 128 MiB budget: a malformed, DOCTYPE-carrying, encrypted
-   or oversized auxiliary part now refuses with the corresponding L1
-   code instead of being ignored. Documents without these parts (or
-   with well-formed ones) are unaffected — non-target observations are
-   byte-identical to v0.19.1 (pinned).
-
-21. **Low-contrast threshold is its own integer rule (L2).** Detection
-   uses D = |Y_fg − Y_bg| // 10000 < 20 on Rec.709 luma without gamma
-   correction; the boundary pairs are ECECEC/white (D = 19, detected)
-   and EBEBEB/white (D = 20, not detected). Light-gray watermarks
-   (EBEBEB or lighter on white) are not detected by design. Highlight
-   colours follow Word's rendering palette; ECMA-376's prose values
-   for the dark*/gray names differ (CSS-derived) and are not used.
+1. **Observation, not removal.** Concealment is found and reported; masking is Sieve Redact's domain.
+2. **Semantic intent is not evaluated.** A visible but manipulative prompt is out of scope.
+3. **Only inline CSS is inspected.** External stylesheets are not resolved.
+4. **Character-table coverage is fixed.** New invisible techniques require updating the tables.
+5. **An observation engine, not a detector.** Findings should be confirmed by human review.
+6. **Homoglyph twins are non-ASCII → ASCII only.** Lookalike pairs inside ASCII (O/0, l/1) and CJK lookalikes are out of scope.
+7. **Missing OCR language packs fail silently.** No error is raised; OCR simply yields no text.
+8. **PDF Form XObject nesting is capped at 8 levels.** Deeper nests are skipped.
+9. **Kanji are shared with Chinese.** A Chinese-language document may be detected as Japanese.
+10. **PDF report charts need Chrome/Chromium** (when generated with kaleido 1.x).
+11. **Control-syntax matching is surface-only.** Paraphrasing, letter-spacing and glyph substitution are not seen. A finding is a record, not proof of intent.
+12. **Geometry measures px and unitless lengths only.** em/rem/%/pt are skipped and `@media` blocks are not descended into.
+13. **PDF geometry uses un-transformed positions.** Relative moves and the transform matrix are not composed; fills matching the page background are not observed.
+14. **Unknown keys are refused.** Vocabulary/threshold files reject fields outside the contract; duplicate or invalid values fall back to the built-in defaults.
+15. **Input guarding covers the core formats only.** PDFs and images are read by their own libraries, so a refusal's exact cause needs a second look with other tooling.
+16. **Geometry findings never enter the mask.** They are confirmed through each lane's own receipt (`audit_geometry` / `audit_pdf_geometry`).
+17. **CSV/Excel are not supported** (roadmap candidate) until column roles are specified.
+18. **DOCX hidden text uses simplified rules.** Toggles disagreeing across several levels, table-style formatting, and some width/position tricks are out of scope. Strict-OOXML documents currently yield an empty observation with `parsed successfully`.
+19. **Broken DOCX parts are refused, not silently ignored.** A document whose styles/theme/settings part is malformed, encrypted or oversized is refused with a clear code. Documents without those parts are unaffected.
 
 ---
 
