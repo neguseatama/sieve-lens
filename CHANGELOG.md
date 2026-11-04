@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.20.1] - 2026-11-04
+
+### Changed
+- **Public README refresh (en/ja)**: internal development information
+  removed from the public surfaces; the L1/L2 capability sections now
+  read as plain-language summaries. The deep technical detail remains
+  in `docs/` (`SCHEMA_CONTRACT_v1.md`, `ARCHITECTURE.md`) and `SPEC.md`.
+- **CHANGELOG alignment**: the [0.20.0] entry was aligned with the
+  README limitations list and internal references were removed.
+- **Version surfaces bumped to 0.20.1** (pyproject, `__version__`,
+  module/engine docstrings, README titles en/ja); the version pin
+  tests (L1 reading, L2 DOCX) follow.
+
+### Security / Non-destruction
+- Docs-only release: engine behavior unchanged from 0.20.0 — the only
+  source differences are version strings. Frozen files (`schema.py`,
+  `control_syntax.py`, `geometry.py`, `redact_bridge.py`) untouched,
+  zero dependency changes. Receipts and reports recorded with 0.20.0
+  stay reproducible.
+
 ## [0.20.0] - 2026-11-04
 
 ### Added
