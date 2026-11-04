@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.20.2] - 2026-11-05
+
+### Fixed
+- **Strict-OOXML documents are refused instead of silently unobserved**:
+  a WordprocessingML part whose root element carries a namespace other
+  than the transitional one (Strict OOXML, or any unknown namespace)
+  parses fine but yields no observations at all — every run in it,
+  hidden or not, would be missed. Such a part is now refused with the
+  new refusal code `unsupported_namespace` (the closed set grows from
+  12 to 13 codes; the evidence still carries the code only — never
+  part names or content). The check covers the document part and the
+  headers, footers, footnotes, endnotes, comments, styles and settings
+  parts. A malformed part still refuses as `malformed_xml` first, a
+  root element with an unexpected local name in the standard namespace
+  keeps being observed, and an empty-but-valid document stays observed.
+- **The Word highlight palette follows ECMA-376**: the `green`
+  highlight now resolves to `00FF00`, as the standard's
+  ST_HighlightColor prose specifies (it previously used the
+  CSS-derived `008000`, which is `darkgreen`; `darkgreen` itself stays
+  `008000`). A light-gray run on a green highlight is therefore
+  resolved against the bright green and flagged as low-contrast now;
+  all other palette values are unchanged, and the full 16-value
+  palette is pinned in the test suite.
+
 ## [0.20.1] - 2026-11-04
 
 ### Changed

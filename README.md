@@ -141,7 +141,7 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
   rule, raw value, measured number, threshold, and position - facts
   only, no intent judgment.
 - **Bounded document reading (L1: safe reading)** (v0.19+)
-  Every input is checked before it is parsed. Oversized, encrypted or broken files are refused with one of 12 clear reason codes — and nothing else travels out: no content, no file names.
+  Every input is checked before it is parsed. Oversized, encrypted or broken files are refused with one of 13 clear reason codes — and nothing else travels out: no content, no file names.
 
 - **DOCX concealment observation (L2)** (v0.20+)
   Finds the invisible text a `.docx` can carry: hidden-text marks, tiny fonts, letters painted into the background, and leftovers of tracked deletions — reported as separate `hidden` segments next to the body text. Background colour is resolved through Word's highlight, shading and theme settings. The engine reports the fact that text cannot be seen; it never judges intent. Documents with broken style/theme/settings parts are refused instead of ignored.
@@ -295,7 +295,7 @@ domain of **machine-readable vs. human-visible divergence**.
 15. **Input guarding covers the core formats only.** PDFs and images are read by their own libraries, so a refusal's exact cause needs a second look with other tooling.
 16. **Geometry findings never enter the mask.** They are confirmed through each lane's own receipt (`audit_geometry` / `audit_pdf_geometry`).
 17. **CSV/Excel are not supported** (roadmap candidate) until column roles are specified.
-18. **DOCX hidden text uses simplified rules.** Toggles disagreeing across several levels, table-style formatting, and some width/position tricks are out of scope. Strict-OOXML documents currently yield an empty observation with `parsed successfully`.
+18. **DOCX hidden text uses simplified rules.** Toggles disagreeing across several levels, table-style formatting, and some width/position tricks are out of scope. Strict-OOXML documents are refused (`unsupported_namespace`); re-save them in the standard format to observe their content.
 
 ---
 
