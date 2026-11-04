@@ -60,3 +60,8 @@ all = [
     "weasyprint>=60.0",
     "kaleido>=0.2",
 ]
+test = [
+    "pytest>=8",
+    "setuptools>=61",
+    "wheel",
+]

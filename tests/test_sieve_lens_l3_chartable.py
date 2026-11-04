@@ -15,6 +15,7 @@ Lens.
 
 import hashlib
 import importlib
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -75,6 +76,12 @@ class TestL3T01ShippedTable(L3Base):
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn("[tool.setuptools.package-data]", text)
         self.assertIn('sieve_lens_ext = ["chartable_v1.json"]', text)
+
+        if importlib.util.find_spec("setuptools") is None:
+            self.skipTest(
+                "setuptools is required to build the wheel and the sdist "
+                "for this pin (install the 'test' extra: "
+                "pip install -e '.[test]')")
 
         outdir = Path(tempfile.mkdtemp())
         srcdir = Path(tempfile.mkdtemp()) / "src"
