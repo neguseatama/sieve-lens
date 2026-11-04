@@ -1,6 +1,21 @@
-[English](README.md) | **日本語**
-
 # Sieve Lens v0.21.1
+
+**不可視プロンプト観測エンジン**
+
+*Sieve Lens は、AI を疑うための道具ではない。*  
+*AI が信頼できる入力を受け取るための道具である。*
+
+> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」を、
+> 決定論的・ゼロ依存・説明可能な形で観測するエンジンです。
+
+[Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
+**「機械可読性と人間可視性の乖離」** という新しいドメインへ拡張しました。
+
+[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+
+[English](README.md) | **日本語**
 
 ## 💡 コンセプト
 
@@ -254,23 +269,6 @@ python -m unittest discover -s tests -p "test_sieve_lens_pdf.py" -v
   `twin` フィールド付きで報告され、Redact が置換ルールに変換します。
   不可視文字は削除ルールになります
 - Lens と Redact は「何が不可視か」を同じ定義で扱います
-
-
-
-**不可視プロンプト観測エンジン**
-
-*Sieve Lens は、AI を疑うための道具ではない。*  
-*AI が信頼できる入力を受け取るための道具である。*
-
-> 履歴書・提出物・報告書などに含まれる「AI判定を意図的に誘導する不可視コンテンツ」を、
-> 決定論的・ゼロ依存・説明可能な形で観測するエンジンです。
-
-[Sieve](https://github.com/neguseatama/sieve-core) シリーズを、
-**「機械可読性と人間可視性の乖離」** という新しいドメインへ拡張しました。
-
-[![CI](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml/badge.svg)](https://github.com/neguseatama/sieve-lens/actions/workflows/test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 
 ---
 
