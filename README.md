@@ -296,7 +296,6 @@ domain of **machine-readable vs. human-visible divergence**.
 16. **Geometry findings never enter the mask.** They are confirmed through each lane's own receipt (`audit_geometry` / `audit_pdf_geometry`).
 17. **CSV/Excel are not supported** (roadmap candidate) until column roles are specified.
 18. **DOCX hidden text uses simplified rules.** Toggles disagreeing across several levels, table-style formatting, and some width/position tricks are out of scope. Strict-OOXML documents currently yield an empty observation with `parsed successfully`.
-19. **Broken DOCX parts are refused, not silently ignored.** A document whose styles/theme/settings part is malformed, encrypted or oversized is refused with a clear code. Documents without those parts are unaffected.
 
 ---
 
