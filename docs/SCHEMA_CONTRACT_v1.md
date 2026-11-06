@@ -154,8 +154,11 @@ Replication protocol (mirrors the sieve-tray vendor-sync precedent):
 Both split into a pure `validate_*` (structure only) and a `build_*`
 (default filling + regex compilation + content digest). The content
 digests of the embedded defaults are pinned
-(`27734e17…6fbf`, `70f2bdb5…4540`) — receipts recorded before v0.18.0
-stay reproducible byte-for-byte.
+(`27734e17…6fbf`, `70f2bdb5…4540`) — receipts reproduce
+byte-for-byte for inputs the engine still accepts; the only
+observation changes since the pinning are the low-contrast judgment
+on green highlights (v0.20.2) and the refusal of Strict-OOXML and
+unexpected-root documents (v0.20.2, 0.21.2).
 
 ## 8. Versioning
 

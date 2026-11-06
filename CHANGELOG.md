@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.21.2] - 2026-11-06
+
+### Fixed
+- **WordprocessingML parts with an unexpected root element inside the
+  standard namespace are refused instead of silently unobserved.**
+  v0.20.2 scoped the refusal to the namespace axis (Strict OOXML and
+  unknown namespaces); a part whose root element carries the standard
+  `w` namespace with a different local name — e.g. `word/document.xml`
+  rooted at something other than `document`, or a header not rooted at
+  `hdr` — parses fine but yields no observations at all. Since 0.21.2
+  the expanded root name (`{URI}local`) must match the part's expected
+  root (`document`, `hdr`, `ftr`, `footnotes`, `endnotes`, `comments`,
+  `styles`, `settings`), and such a part is refused with the same
+  `unsupported_namespace` code (the closed set stays at 13 codes; the
+  evidence still carries the code only — never part names, root names
+  or content). The judgment uses the expanded name, so a document that
+  only renames the prefix keeps being read, a malformed part still
+  refuses as `malformed_xml` first, and an empty-but-valid document
+  stays observed.
+- Receipts and reports reproduce with their earlier content for every
+  input the engine still accepts. The only observation changes across
+  v0.20.2 and this release are the low-contrast judgment on green
+  highlights (v0.20.2) and the refusal of Strict-OOXML and
+  unexpected-root documents (v0.20.2, 0.21.2).
+
 ## [0.21.1] - 2026-11-05
 
 ### Changed
