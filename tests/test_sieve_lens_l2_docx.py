@@ -1445,5 +1445,351 @@ class TestL21T08StrictSideParts(L2Base):
                 self.assertEqual(obs.segments, [])
 
 
+# ----------------------------------------------------------------------
+# L2.2 (v0.21.2) — the root-element NAME joins the refusal check
+# (L3 design §3.1). After parsing, the expanded root name {URI}local
+# must be the expected one for the part; v0.20.2 scoped the refusal to
+# the namespace axis and L2.1-T05 pinned that completion gap. Prefixes
+# stay irrelevant (T03), malformed_xml still wins first (T05), the
+# evidence stays code-only (T06), and the accepted-input golden in T07
+# was measured on v0.21.1 (c30c258) before the change.
+# ----------------------------------------------------------------------
+
+_L22_REFUSAL_ORDER = (
+    "not_regular_file", "file_too_large", "too_many_entries",
+    "part_too_large", "total_too_large", "too_many_elements",
+    "doctype_not_allowed", "unsupported_encoding", "duplicate_part",
+    "encrypted", "malformed_xml", "main_part_missing",
+    "unsupported_namespace")
+
+# the 8 kinds of the L3 §3.1 table: (part, expected root, inner XML)
+_L22_KINDS = (
+    ("word/document.xml", "w:document",
+     "<w:body><w:p><w:r><w:t>Body text for the L2.2 checks.</w:t></w:r>"
+     "</w:p></w:body>"),
+    ("word/header1.xml", "w:hdr",
+     "<w:p><w:r><w:t>Header text for the L2.2 checks.</w:t></w:r></w:p>"),
+    ("word/footer1.xml", "w:ftr",
+     "<w:p><w:r><w:t>Footer text for the L2.2 checks.</w:t></w:r></w:p>"),
+    ("word/footnotes.xml", "w:footnotes",
+     '<w:footnote w:id="1"><w:p><w:r><w:t>'
+     "Footnote text for the L2.2 checks.</w:t></w:r></w:p></w:footnote>"),
+    ("word/endnotes.xml", "w:endnotes",
+     '<w:endnote w:id="1"><w:p><w:r><w:t>'
+     "Endnote text for the L2.2 checks.</w:t></w:r></w:p></w:endnote>"),
+    ("word/comments.xml", "w:comments",
+     '<w:comment w:id="1"><w:r><w:t>'
+     "Comment text for the L2.2 checks.</w:t></w:r></w:comment>"),
+    ("word/styles.xml", "w:styles",
+     '<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr>'
+     "</w:rPrDefault></w:docDefaults>"),
+    ("word/settings.xml", "w:settings", ""),
+)
+
+
+def _l22_parts_with(part, root):
+    """All 8 parts with their expected roots, except `part` whose root
+    element is renamed to `root` (same standard namespace)."""
+    parts = {}
+    for name, expected, inner in _L22_KINDS:
+        parts[name] = _decl(inner, root if name == part else expected)
+    return parts
+
+
+# the accepted-input golden of T07, measured on v0.21.1 (c30c258)
+_G_L22_RICH = {
+    "mask": "1001-100",
+    "h_states": {"H1": 1, "H2": 0, "H3": 0, "H4": 1, "H5": 1, "H6": 0,
+                 "H7": 0},
+    "evidence": {
+        "H1": ["parsed successfully"], "H2": ["none"], "H3": ["none"],
+        "H4": ["paragraph 2: DOCX concealment: vanish"],
+        "H5": ["[header_footer] footer1 1: Footer text for the L2.2 golden.",
+               "[header_footer] header1 1: Header text for the L2.2 golden.",
+               "[footnote] footnote #1: Footnote text for the L2.2 golden.",
+               "[footnote] endnote #1: Endnote text for the L2.2 golden.",
+               "[comment] comment #1: Comment text for the L2.2 golden."],
+        "H6": ["none"], "H7": ["none"]},
+    "segments": [
+        ("Visible body text for the L2.2 golden.", True, "body",
+         "paragraph 1"),
+        ("Hidden note for the L2.2 golden.", False, "docx_hidden",
+         "paragraph 2"),
+        ("Footer text for the L2.2 golden.", True, "header_footer",
+         "footer1 1"),
+        ("Header text for the L2.2 golden.", True, "header_footer",
+         "header1 1"),
+        ("Footnote text for the L2.2 golden.", False, "footnote",
+         "footnote #1"),
+        ("Endnote text for the L2.2 golden.", False, "footnote",
+         "endnote #1"),
+        ("Comment text for the L2.2 golden.", False, "comment",
+         "comment #1"),
+    ],
+    "diag": {"zero_width_density": 0.0, "zero_width_threshold": 0.01,
+             "payload_min_length": 16, "oob_min_length": 10},
+    "rep_sha": "6c28543811e9f32b75b968cec97eb44e42fc40f80c985b6182288dafbc453faa",
+    "html_sha": "1bb72d64fba180b67b34d36ccf84e228233f0d400d35c3a7383aaa22493b43b5",
+}
+
+_L22_RICH_PARTS = {
+    "word/document.xml": _decl(
+        "<w:body>"
+        "<w:p><w:r><w:t>Visible body text for the L2.2 golden.</w:t></w:r></w:p>"
+        "<w:p><w:r><w:rPr><w:vanish/></w:rPr>"
+        "<w:t>Hidden note for the L2.2 golden.</w:t></w:r></w:p>"
+        "</w:body>", "w:document"),
+    "word/styles.xml": _STYLES_BENIGN,
+    "word/settings.xml": _SETTINGS_BENIGN,
+    "word/footnotes.xml": _decl(
+        '<w:footnote w:id="1"><w:p><w:r><w:t>'
+        "Footnote text for the L2.2 golden.</w:t></w:r></w:p></w:footnote>",
+        "w:footnotes"),
+    "word/endnotes.xml": _decl(
+        '<w:endnote w:id="1"><w:p><w:r><w:t>'
+        "Endnote text for the L2.2 golden.</w:t></w:r></w:p></w:endnote>",
+        "w:endnotes"),
+    "word/comments.xml": _decl(
+        '<w:comment w:id="1"><w:r><w:t>'
+        "Comment text for the L2.2 golden.</w:t></w:r></w:comment>",
+        "w:comments"),
+    "word/header1.xml": _decl(
+        "<w:p><w:r><w:t>Header text for the L2.2 golden.</w:t></w:r></w:p>",
+        "w:hdr"),
+    "word/footer1.xml": _decl(
+        "<w:p><w:r><w:t>Footer text for the L2.2 golden.</w:t></w:r></w:p>",
+        "w:ftr"),
+}
+
+
+class TestL22T01WrongRootRefused(L2Base):
+    """Each of the 8 kinds carries an unexpected local name inside the
+    standard namespace: refused as unsupported_namespace (L3 §3.1)."""
+
+    def _check(self, part, wrong):
+        obs, _ = self._observe("t22a.docx", _l22_parts_with(part, wrong))
+        self.assertEqual(obs.mask, "0000-000")
+        self.assertEqual(
+            obs.evidence.get("H1"),
+            ["Extraction refused: unsupported_namespace"])
+        self.assertEqual(obs.segments, [])
+
+    def test_document(self):
+        self._check("word/document.xml", "w:doc")
+
+    def test_header(self):
+        self._check("word/header1.xml", "w:hdrX")
+
+    def test_footer(self):
+        self._check("word/footer1.xml", "w:ftrX")
+
+    def test_footnotes(self):
+        self._check("word/footnotes.xml", "w:footnotesX")
+
+    def test_endnotes(self):
+        self._check("word/endnotes.xml", "w:endnotesX")
+
+    def test_comments(self):
+        self._check("word/comments.xml", "w:commentsX")
+
+    def test_styles(self):
+        self._check("word/styles.xml", "w:stylesX")
+
+    def test_settings(self):
+        self._check("word/settings.xml", "w:settingsX")
+
+
+class TestL22T02CorrectRootsObserved(L2Base):
+    """Each of the 8 kinds with its expected root: observed exactly as
+    before (the completion must not cost any accepted input)."""
+
+    def _obs_all_correct(self):
+        return self._observe("t22b.docx", _l22_parts_with(None, None))
+
+    def test_document(self):
+        obs, _ = self._obs_all_correct()
+        self.assertEqual(obs.evidence.get("H1"), ["parsed successfully"])
+        self.assertTrue(
+            any(s.kind == "body" and
+                "Body text for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+    def test_header(self):
+        obs, _ = self._obs_all_correct()
+        self.assertTrue(
+            any(s.kind == "header_footer" and
+                "Header text for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+    def test_footer(self):
+        obs, _ = self._obs_all_correct()
+        self.assertTrue(
+            any(s.kind == "header_footer" and
+                "Footer text for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+    def test_footnotes(self):
+        obs, _ = self._obs_all_correct()
+        self.assertTrue(
+            any(s.kind == "footnote" and s.location == "footnote #1"
+                for s in obs.segments), obs.segments)
+
+    def test_endnotes(self):
+        obs, _ = self._obs_all_correct()
+        self.assertTrue(
+            any(s.kind == "footnote" and s.location == "endnote #1"
+                for s in obs.segments), obs.segments)
+
+    def test_comments(self):
+        obs, _ = self._obs_all_correct()
+        self.assertTrue(
+            any(s.kind == "comment" and
+                "Comment text for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+    def test_styles(self):
+        obs, _ = self._obs_all_correct()
+        self.assertEqual(obs.evidence.get("H1"), ["parsed successfully"])
+
+    def test_settings(self):
+        obs, _ = self._obs_all_correct()
+        self.assertEqual(obs.evidence.get("H1"), ["parsed successfully"])
+
+
+class TestL22T03PrefixIrrelevant(L2Base):
+    """The judgment uses the expanded name: a different prefix (z:)
+    keeps the document readable."""
+
+    def test_prefixed_document_and_header_are_read(self):
+        doc = ('<?xml version="1.0" encoding="UTF-8"?>'
+               f'<z:document xmlns:z="{_W_NS}"><z:body><z:p><z:r>'
+               "<z:t>Prefix body for the L2.2 checks.</z:t>"
+               "</z:r></z:p></z:body></z:document>")
+        obs, _ = self._observe("t22c1.docx", {"word/document.xml": doc})
+        self.assertEqual(obs.evidence.get("H1"), ["parsed successfully"])
+        self.assertTrue(
+            any(s.kind == "body" and
+                "Prefix body for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+        hdr = ('<?xml version="1.0" encoding="UTF-8"?>'
+               f'<z:hdr xmlns:z="{_W_NS}"><z:p><z:r>'
+               "<z:t>Prefix header for the L2.2 checks.</z:t>"
+               "</z:r></z:p></z:hdr>")
+        obs, _ = self._observe("t22c2.docx", {
+            "word/document.xml": _decl(_L22_KINDS[0][2], "w:document"),
+            "word/header1.xml": hdr})
+        self.assertTrue(
+            any(s.kind == "header_footer" and
+                "Prefix header for the L2.2 checks." in s.text
+                for s in obs.segments), obs.segments)
+
+
+class TestL22T04EmptyValidDocument(L2Base):
+    """An empty-but-valid document stays observed as 1000-000."""
+
+    def test_empty_body_stays_observed(self):
+        obs, _ = self._observe("t22f.docx", {
+            "word/document.xml": _decl("<w:body><w:sectPr/></w:body>",
+                                       "w:document")})
+        self.assertEqual(obs.mask, "1000-000")
+        self.assertEqual(obs.evidence.get("H1"), ["parsed successfully"])
+        self.assertEqual(obs.segments, [])
+
+
+class TestL22T05MalformedFirst(L2Base):
+    """A malformed part refuses as malformed_xml before the name check."""
+
+    def test_malformed_document_still_wins(self):
+        obs, _ = self._observe("t22d1.docx", {
+            "word/document.xml":
+                f'<w:doc xmlns:w="{_W_NS}"><w:body><w:p>'})
+        self.assertEqual(
+            obs.evidence.get("H1"),
+            ["Extraction refused: malformed_xml"])
+
+    def test_malformed_header_still_wins(self):
+        obs, _ = self._observe("t22d2.docx", {
+            "word/document.xml": _decl(_L22_KINDS[0][2], "w:document"),
+            "word/header1.xml": f'<w:hdrX xmlns:w="{_W_NS}"><w:p>'})
+        self.assertEqual(
+            obs.evidence.get("H1"),
+            ["Extraction refused: malformed_xml"])
+
+
+class TestL22T06EvidenceCodeOnly(L2Base):
+    """The refusal evidence carries the code only — never the root
+    name, the part name or any input text."""
+
+    def test_refusal_carries_the_code_only(self):
+        parts = _l22_parts_with("word/document.xml", "w:zebrawrongroot")
+        obs, p = self._observe("t22e.docx", parts)
+        self.assertEqual(
+            obs.evidence,
+            {"H1": ["Extraction refused: unsupported_namespace"]})
+        self.assertEqual(obs.segments, [])
+        rep = format_report(obs).replace(str(p), "SRC")
+        self.assertIn("unsupported_namespace", rep)
+        self.assertNotIn("zebrawrongroot", rep)
+        self.assertNotIn("word/document.xml", rep)
+        self.assertNotIn("Body text for the L2.2 checks.", rep)
+        html = format_report_html(obs).replace(str(p), "SRC")
+        self.assertNotIn("zebrawrongroot", html)
+        self.assertNotIn("word/document.xml", html)
+
+
+class TestL22T07NonDestruction(L2Base):
+    """The accepted-input golden measured on v0.21.1 (c30c258) must
+    hold unchanged after the name check lands."""
+
+    def test_rich_accepted_docx_matches_v0211_golden(self):
+        obs, p = self._observe("t22golden.docx", _L22_RICH_PARTS)
+        self._assert_golden(obs, p, _G_L22_RICH)
+
+
+class TestL22T08RefusalCodesUnchanged(L2Base):
+    """REFUSAL_CODES stays the closed set of 13; no new code."""
+
+    def test_thirteen_codes_unchanged(self):
+        self.assertEqual(len(REFUSAL_CODES), 13)
+        self.assertEqual(set(REFUSAL_CODES), set(_L22_REFUSAL_ORDER))
+        self.assertEqual(REFUSAL_CODES, _SPEC_REFUSAL_CODES)
+
+
+class TestL22T10VersionAndPins(L2Base):
+    """Version 0.21.2 everywhere + the frozen 4 files keep their bytes
+    (the vocabulary, geometry and corpus digests stay pinned by the
+    existing constants above)."""
+
+    REPO = Path(__file__).resolve().parent.parent
+
+    def test_version_0212_is_consistent(self):
+        self.assertEqual(sieve_lens.__version__, "0.21.2")
+        self.assertIn(
+            'version = "0.21.2"',
+            (self.REPO / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertIn(
+            "## [0.21.2]",
+            (self.REPO / "CHANGELOG.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "# Sieve Lens v0.21.2",
+            (self.REPO / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "# Sieve Lens v0.21.2",
+            (self.REPO / "README.ja.md").read_text(encoding="utf-8"))
+
+    def test_frozen_files_keep_their_bytes(self):
+        for name, digest in (
+                ("sieve_lens_ext/schema.py", _SCHEMA_PY_SHA256),
+                ("sieve_lens_ext/control_syntax.py",
+                 _CONTROL_SYNTAX_PY_SHA256),
+                ("sieve_lens_ext/geometry.py", _GEOMETRY_PY_SHA256),
+                ("sieve_lens_ext/redact_bridge.py",
+                 _REDACT_BRIDGE_PY_SHA256)):
+            data = (self.REPO / name).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest,
+                             name)
+
+
 if __name__ == "__main__":
     unittest.main()
