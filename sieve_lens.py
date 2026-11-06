@@ -320,22 +320,51 @@ def _parse_bounded_xml(data: bytes):
         raise ExtractionRefused("malformed_xml")
 
 
-def _require_word_namespace(root) -> None:
-    """Refuse a WordprocessingML part outside the transitional
-    namespace (v0.20.2).
+_WORD_PART_ROOTS = {
+    "word/document.xml": "document",
+    "word/styles.xml": "styles",
+    "word/settings.xml": "settings",
+    "word/footnotes.xml": "footnotes",
+    "word/endnotes.xml": "endnotes",
+    "word/comments.xml": "comments",
+}
 
-    Lens reads the transitional WordprocessingML namespace only. A
-    part whose root element carries any other namespace — Strict
-    OOXML included — parses fine but yields no observations: every
-    run in it would be silently unobserved. That state is refused as
-    an observation (code only, no part names) instead of being
-    reported as a successful parse. The parse failure of the same
-    part still wins over this check; the check is namespace-only, so
-    a root element with an unexpected local name in the standard
-    namespace keeps being observed.
+
+def _expected_root_local(part: str) -> str:
+    """Expected root local name for a part the reader consumes
+    (L3 design §3.1 table). The empty string means the part carries no
+    name expectation (docProps and theme parts are not checked)."""
+    if part in _WORD_PART_ROOTS:
+        return _WORD_PART_ROOTS[part]
+    if part.startswith("word/header"):
+        return "hdr"
+    if part.startswith("word/footer"):
+        return "ftr"
+    return ""
+
+
+def _require_word_root(root, part: str) -> None:
+    """Refuse a WordprocessingML part outside the transitional
+    namespace (v0.20.2) or with an unexpected root element name
+    (v0.21.2).
+
+    Lens reads the transitional WordprocessingML namespace only. A part
+    whose root element carries any other namespace — Strict OOXML
+    included — parses fine but yields no observations: every run in it
+    would be silently unobserved. Since v0.21.2 the same holds for a
+    root element whose expanded name does not match the part's expected
+    root (document, hdr, ftr, footnotes, endnotes, comments, styles,
+    settings) inside the standard namespace. Such a part is refused as
+    an observation (code only, no part names) instead of being reported
+    as a successful parse. The parse failure of the same part still
+    wins over this check, and the judgment uses the expanded name, so a
+    document that only renames the prefix keeps being read.
     """
     tag = root.tag
     if not (isinstance(tag, str) and tag.startswith("{" + _W_NS + "}")):
+        raise ExtractionRefused("unsupported_namespace")
+    expected = _expected_root_local(part)
+    if expected and tag != "{" + _W_NS + "}" + expected:
         raise ExtractionRefused("unsupported_namespace")
 
 
@@ -797,17 +826,17 @@ class _DocxExtractor(_Extractor):
             styles_root = self._read_optional_part(
                 zf, "word/styles.xml", limits, budget)
             if styles_root is not None:
-                _require_word_namespace(styles_root)
+                _require_word_root(styles_root, "word/styles.xml")
             theme_root = self._read_optional_part(
                 zf, "word/theme/theme1.xml", limits, budget)
             settings_root = self._read_optional_part(
                 zf, "word/settings.xml", limits, budget)
             if settings_root is not None:
-                _require_word_namespace(settings_root)
+                _require_word_root(settings_root, "word/settings.xml")
             resolver = _DocxStyleResolver(
                 styles_root, theme_root, settings_root)
             root = _parse_bounded_xml(doc)
-            _require_word_namespace(root)
+            _require_word_root(root, "word/document.xml")
             segments.extend(self._body_segments(
                 root, resolver, visible_kind="body",
                 location_prefix="paragraph"))
@@ -851,7 +880,7 @@ class _DocxExtractor(_Extractor):
             if data is None:
                 continue
             root = _parse_bounded_xml(data)
-            _require_word_namespace(root)
+            _require_word_root(root, part)
             for idx, note in enumerate(root.iter(_w(tag)), start=1):
                 if note.get(_w("type")):
                     continue
@@ -871,7 +900,7 @@ class _DocxExtractor(_Extractor):
         if data is None:
             return []
         root = _parse_bounded_xml(data)
-        _require_word_namespace(root)
+        _require_word_root(root, "word/comments.xml")
         segments = []
         for idx, comment in enumerate(root.iter(_w("comment")), start=1):
             texts = [(t.text or "") for t in comment.iter(_w("t"))]
@@ -907,7 +936,7 @@ class _DocxExtractor(_Extractor):
         if data is None:
             return []
         root = _parse_bounded_xml(data)
-        _require_word_namespace(root)
+        _require_word_root(root, name)
         return self._body_segments(root, resolver,
                                    visible_kind=visible_kind,
                                    location_prefix=location_prefix)

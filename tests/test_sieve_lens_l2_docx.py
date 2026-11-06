@@ -13,7 +13,11 @@ The L2.1 section (v0.20.2) adds the strict-namespace refusal (a
 WordprocessingML part outside the transitional namespace — e.g. Strict
 OOXML — would otherwise be silently unobserved), the full highlight
 palette pin (ECMA-376 ST_HighlightColor prose values), and the
-control-syntax-inside-hidden-run lock.
+control-syntax-inside-hidden-run lock. The L2.2 section (v0.21.2)
+completes the refusal with the root-element NAME (L3 design §3.1):
+inside the standard namespace the expanded root name must match the
+part's expected root, so L2.1-T05's renamed-root fixtures flip from
+observed to refused.
 """
 
 import hashlib
@@ -1326,30 +1330,35 @@ class TestL21T04EmptyDocument(L2Base):
 
 
 # ----------------------------------------------------------------------
-# L2.1-T05 — the check is namespace-only: a root element with another
-# local name (standard namespace) keeps being observed
+# L2.1-T05 — since 0.21.2 the root NAME is checked too: a root element
+# with another local name (standard namespace) is refused. The fixtures
+# below used to stay observed because v0.20.2 scoped the refusal to the
+# namespace axis; the L3 design §3.1 table completes the check and
+# L2.2-T01 pins the refusal, so this test's expectation flips with it.
 # ----------------------------------------------------------------------
 
 class TestL21T05NamespaceOnly(L2Base):
-    def test_root_name_differences_stay_observed(self):
+    def test_root_name_differences_are_refused(self):
         obs, _ = self._observe("t05a.docx", {
             "word/document.xml": _decl(
                 f"<w:body>{_para('Body text for the renamed root.')}"
                 f"</w:body>",
                 "w:doc")})
-        self.assertEqual(obs.mask, "1000-000")
-        self.assertTrue(
-            any(s.kind == "body" for s in obs.segments), obs.segments)
+        self.assertEqual(obs.mask, "0000-000")
+        self.assertEqual(
+            obs.evidence.get("H1"),
+            ["Extraction refused: unsupported_namespace"])
+        self.assertEqual(obs.segments, [])
 
         obs, _ = self._observe("t05b.docx", {
             "word/document.xml": _body_doc(_para("Body text here.")),
             "word/header1.xml": _decl(
                 "<w:p><w:r><w:t>header text to observe.</w:t></w:r></w:p>",
                 "w:hdrX")})
-        self.assertTrue(
-            any(s.kind == "header_footer" and
-                "header text to observe." in s.text
-                for s in obs.segments), obs.segments)
+        self.assertEqual(
+            obs.evidence.get("H1"),
+            ["Extraction refused: unsupported_namespace"])
+        self.assertEqual(obs.segments, [])
 
 
 # ----------------------------------------------------------------------
