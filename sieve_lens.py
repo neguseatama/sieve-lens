@@ -28,7 +28,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 
 __version__ = "0.21.2"
@@ -79,6 +79,21 @@ class Observation:
     segments: List[Segment] = field(default_factory=list)
     evidence: Dict[str, List[str]] = field(default_factory=dict)
     diagnostics: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class VisibleText:
+    """The visible text of an observation (v0.22.0).
+
+    ``text`` is the visible segments joined by a single newline;
+    ``removed`` counts, per strip kind, the invisible characters taken
+    out of that text. Strip kinds are the closed set ``STRIP_KINDS``;
+    ZWJ, ZWNJ and variation selectors are never removable through
+    this API (emoji joins and Japanese IVS would break).
+    """
+
+    text: str
+    removed: Dict[str, int]
 
 
 # ----------------------------------------------------------------------
@@ -264,21 +279,69 @@ def _check_regular_file_size(path: Path, limits: ReadLimits) -> None:
         raise ExtractionRefused("file_too_large")
 
 
-def _read_text_bounded(path: Path, limits: ReadLimits) -> str:
-    """Read a UTF-8 text document exactly like read_text, bounded.
+def _universal_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
-    Text mode keeps universal-newline translation (\\r\\n -> \\n), so an
-    accepted input yields the very same text that
-    ``path.read_text(encoding="utf-8", errors="replace")`` returns.
-    With ``errors="replace"`` one byte decodes to at most one character,
-    so a character count above the limit implies a byte count above it.
+
+_UTF16_32_BOMS = (b"\xff\xfe", b"\xfe\xff",
+                  b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")
+
+
+def _decode_document_bytes(data: bytes) -> Tuple[str, Optional[str]]:
+    """Decode a plain text / HTML document with the series-wide
+    character-code policy (v0.22.0; the reference is the Crowd 0.9.0
+    implementation, sieve_crowd/tabular.py ``decode_csv`` auto).
+
+    In order: a UTF-16/UTF-32 BOM is refused outright; a UTF-8 BOM
+    must decode as strict UTF-8 (``utf-8-sig``); the whole input must
+    decode as strict UTF-8; the whole input must decode as strict
+    CP932 (Windows-31J); otherwise the input is refused with
+    ``unsupported_encoding``. ``errors="replace"`` is never used: one
+    bad byte sinks the candidate. The result is
+    ``(text, encoding_name)`` where ``encoding_name`` is None for the
+    UTF-8 family and "cp932" when the CP932 candidate holds; the
+    non-None value is the one extra diagnostics item for a non-UTF-8
+    input (the existing diagnostics keys and their order stay put; the
+    new key is appended at the end). Universal-newline translation
+    (\r\n and \r -> \n) is applied, so an accepted UTF-8 input yields
+    the very same text that v0.21.2 returned for it.
+    """
+    if data[:4] in _UTF16_32_BOMS or data[:2] in (b"\xff\xfe",
+                                                  b"\xfe\xff"):
+        raise ExtractionRefused("unsupported_encoding")
+    if data.startswith(b"\xef\xbb\xbf"):
+        try:
+            return _universal_newlines(data.decode("utf-8-sig")), None
+        except UnicodeDecodeError:
+            pass
+    try:
+        return _universal_newlines(data.decode("utf-8")), None
+    except UnicodeDecodeError:
+        pass
+    try:
+        decoded = data.decode("cp932")
+    except UnicodeDecodeError:
+        raise ExtractionRefused("unsupported_encoding") from None
+    return _universal_newlines(decoded), "cp932"
+
+
+def _read_text_bounded(path: Path,
+                       limits: ReadLimits) -> Tuple[str, Optional[str]]:
+    """Read a text document with the series-wide character-code
+    policy, bounded (v0.22.0); returns ``(text, encoding_name)``.
+
+    An accepted UTF-8 input yields the very same text that
+    ``path.read_text(encoding="utf-8", errors="replace")`` returned
+    before v0.22.0. Under the strict decoders of _decode_document_bytes
+    one byte still decodes to at most one character, so a character
+    count above the limit implies a byte count above it.
     """
     _check_regular_file_size(path, limits)
-    with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read(limits.max_file_bytes + 1)
-    if len(text) > limits.max_file_bytes:
+    with open(path, "rb") as f:
+        data = f.read(limits.max_file_bytes + 1)
+    if len(data) > limits.max_file_bytes:
         raise ExtractionRefused("file_too_large")
-    return text
+    return _decode_document_bytes(data)
 
 
 _XML_DECL_ENCODING_RE = re.compile(
@@ -408,9 +471,12 @@ def _read_zip_part(zf, name: str, limits: ReadLimits,
 class _PlainTextExtractor(_Extractor):
     def __init__(self, read_limits: Optional[ReadLimits] = None):
         self.read_limits = read_limits
+        self.encoding_name = None
 
     def extract(self, path: Path) -> List[Segment]:
-        text = _read_text_bounded(path, _resolve_limits(self.read_limits))
+        text, encoding_name = _read_text_bounded(
+            path, _resolve_limits(self.read_limits))
+        self.encoding_name = encoding_name
         text = strip_leading_bom(text)
         return [Segment(text=text, visible=True, kind="body")]
 
@@ -444,7 +510,9 @@ class _HtmlExtractor(html.parser.HTMLParser, _Extractor):
         self._in_style_or_script = False
 
     def extract(self, path: Path) -> List[Segment]:
-        text = _read_text_bounded(path, _resolve_limits(self.read_limits))
+        text, encoding_name = _read_text_bounded(
+            path, _resolve_limits(self.read_limits))
+        self.encoding_name = encoding_name
         text = strip_leading_bom(text)
         self._reset()
         self.feed(text)
@@ -1166,14 +1234,17 @@ class SieveLensEngine:
         except Exception as e:
             return self._null_observation(
                 str(path), f"Extraction failed: {type(e).__name__}")
-        return self._analyze(segments, source=str(path))
+        encoding_name = getattr(extractor, "encoding_name", None)
+        return self._analyze(segments, source=str(path),
+                             encoding_name=encoding_name)
 
     def observe_text(self, text: str) -> Observation:
         text = strip_leading_bom(text)
         segments = [Segment(text=text, visible=True, kind="body")]
         return self._analyze(segments, source="<text>")
 
-    def _analyze(self, segments: List[Segment], source: str) -> Observation:
+    def _analyze(self, segments: List[Segment], source: str,
+                 encoding_name: Optional[str] = None) -> Observation:
         body_text = "".join(
             s.text for s in segments
             if s.kind in ("body", "css_hidden", "docx_hidden"))
@@ -1200,6 +1271,15 @@ class SieveLensEngine:
             body_text, segments, meaningful_oob, mixed_tokens, payload_runs
         )
 
+        diagnostics = {
+            "zero_width_density": round(zw_density, 4),
+            "zero_width_threshold": self.zero_width_density_threshold,
+            "payload_min_length": self.payload_min_length,
+            "oob_min_length": self.oob_min_length,
+            "version": __version__,
+        }
+        if encoding_name:
+            diagnostics["encoding_name"] = encoding_name
         return Observation(
             source=source,
             mask=full_mask,
@@ -1208,13 +1288,7 @@ class SieveLensEngine:
                       "H5": h5, "H6": h6, "H7": h7},
             segments=segments,
             evidence=evidence,
-            diagnostics={
-                "zero_width_density": round(zw_density, 4),
-                "zero_width_threshold": self.zero_width_density_threshold,
-                "payload_min_length": self.payload_min_length,
-                "oob_min_length": self.oob_min_length,
-                "version": __version__,
-            },
+            diagnostics=diagnostics,
         )
 
     def _collect_evidence(self, body_text, segments, oob, mixed_tokens, payload_runs):
@@ -1276,6 +1350,96 @@ class SieveLensEngine:
             evidence={"H1": [reason]},
             diagnostics={"version": __version__},
         )
+
+
+# ----------------------------------------------------------------------
+# 5.5 Visible text extraction (v0.22.0)
+# ----------------------------------------------------------------------
+
+STRIP_KINDS = ("zero_width_space", "word_joiner", "bom_mid_text",
+               "bidi_control", "tag_chars")
+
+# The strip kind -> codepoint table. Deliberately narrower than
+# INVISIBLE: ZWJ (U+200D), ZWNJ (U+200C) and the variation selectors
+# (U+FE00-FE0F, U+E0100-E01EF) are not members of any kind, so they
+# can never be removed through this API. A tag-char run that directly
+# follows U+1F3F4 is kept as part of the flag emoji sequence.
+_STRIP_CHARS = {
+    "zero_width_space": frozenset({0x200B}),
+    "word_joiner": frozenset({0x2060}),
+    "bom_mid_text": frozenset({0xFEFF}),
+    "bidi_control": (frozenset(range(0x202A, 0x202F))
+                     | frozenset(range(0x2066, 0x206A))),
+    "tag_chars": TAG_CHARS,
+}
+
+
+def _strip_invisible(text: str, kinds: FrozenSet[str]) -> Tuple[str, Dict[str, int]]:
+    """Remove the strip kinds from one text; return (text, counts).
+
+    Counts carry only the kinds with at least one removal. A tag-char
+    run immediately after U+1F3F4 survives as part of the flag.
+    """
+    removed: Dict[str, int] = {}
+    out: List[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        cp = ord(text[i])
+        if cp == 0x1F3F4:
+            out.append(text[i])
+            i += 1
+            while i < n and ord(text[i]) in TAG_CHARS:
+                out.append(text[i])
+                i += 1
+            continue
+        kind = None
+        for k in kinds:
+            if cp in _STRIP_CHARS[k]:
+                kind = k
+                break
+        if kind is None:
+            out.append(text[i])
+        else:
+            removed[kind] = removed.get(kind, 0) + 1
+        i += 1
+    return "".join(out), removed
+
+
+def visible_text(segments_or_observation, *,
+                 strip: "FrozenSet[str] | set" = frozenset()) -> VisibleText:
+    """Return the visible text of an observation or segment list
+    (v0.22.0).
+
+    Only segments with ``visible`` true are used, in order, joined by
+    a single newline; empty (or whitespace-only) segments are dropped.
+    The observation's own parse result is used — nothing is
+    re-extracted. ``strip`` is a subset of the closed set
+    ``STRIP_KINDS``; the default empty set is the faithful return.
+    Unknown kinds raise ValueError; ZWJ, ZWNJ and variation selectors
+    are not strip kinds and always survive.
+    """
+    strip = frozenset(strip)
+    unknown = strip - set(STRIP_KINDS)
+    if unknown:
+        raise ValueError(
+            f"unknown strip kind(s): {sorted(unknown)}; "
+            f"the closed set is {sorted(STRIP_KINDS)}")
+    segments = getattr(segments_or_observation, "segments",
+                       segments_or_observation)
+    parts: List[str] = []
+    removed: Dict[str, int] = {}
+    for seg in segments:
+        if not getattr(seg, "visible", False):
+            continue
+        text = seg.text or ""
+        if not text.strip():
+            continue
+        if strip:
+            text, seg_removed = _strip_invisible(text, strip)
+            for kind, count in seg_removed.items():
+                removed[kind] = removed.get(kind, 0) + count
+        parts.append(text)
+    return VisibleText(text="\n".join(parts), removed=removed)
 
 
 # ----------------------------------------------------------------------
@@ -1597,10 +1761,13 @@ __all__ = [
     "SieveLensEngine",
     "Observation",
     "Segment",
+    "VisibleText",
     "Extractor",
     "ReadLimits",
     "ExtractionRefused",
     "CONCEALMENT_REASONS",
+    "STRIP_KINDS",
+    "visible_text",
     "format_report",
     "format_report_html",
     "write_report_html",

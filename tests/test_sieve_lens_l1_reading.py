@@ -307,23 +307,26 @@ class TestL1T02NonDestruction(L1Base):
             "4960350cdc1ce1dd1af66e89f6e8f3a6f1f377ba5ce8d29acb89c24f3ecb7dac",
             "0ed50a0414e4c8ba7d2fcd3193fd1e6380cbe29a3080913e825f58e4ff0bbb09")
 
-    def test_crlf_txt_with_invalid_bytes(self):
+    def test_crlf_txt_with_cp932_valid_bytes(self):
+        # v0.22.0: the series-wide character-code policy (the Crowd
+        # 0.9.0 reference). \xff\x80 decodes as valid CP932, so the
+        # input is accepted with the encoding_name diagnostics item
+        # instead of per-byte replacement; the UTF-8 golden tests
+        # above are untouched.
         p = self._write_bytes("crlf.txt",
                               b"line one\r\nline two\r\n\xff\x80 tail"
                               b"\r\nlast\r\n")
         obs = SieveLensEngine().observe(p)
-        self._assert_same_as_v0180(
-            obs, p,
-            "1000-000",
-            {"H1": 1, "H2": 0, "H3": 0, "H4": 0, "H5": 0, "H6": 0, "H7": 0},
-            {"H1": ["parsed successfully"], "H2": ["none"], "H3": ["none"],
-             "H4": ["none"], "H5": ["none"], "H6": ["none"], "H7": ["none"]},
-            [("line one\nline two\n\ufffd\ufffd tail\nlast\n",
-              True, "body", None)],
-            {"zero_width_density": 0.0, "zero_width_threshold": 0.01,
-             "payload_min_length": 16, "oob_min_length": 10},
-            "4960350cdc1ce1dd1af66e89f6e8f3a6f1f377ba5ce8d29acb89c24f3ecb7dac",
-            "0ed50a0414e4c8ba7d2fcd3193fd1e6380cbe29a3080913e825f58e4ff0bbb09")
+        self.assertEqual(obs.mask, "1000-000")
+        self.assertEqual(
+            obs.h_states,
+            {"H1": 1, "H2": 0, "H3": 0, "H4": 0, "H5": 0, "H6": 0,
+             "H7": 0})
+        self.assertEqual(
+            [(s.text, s.visible, s.kind, s.location) for s in obs.segments],
+            [("line one\nline two\n\uf8f3\u0080 tail\nlast\n",
+              True, "body", None)])
+        self.assertEqual(obs.diagnostics.get("encoding_name"), "cp932")
 
     def test_md_with_payload(self):
         p = self._write("note.md",
@@ -802,12 +805,18 @@ class TestL1T09PlainAndHtml(L1Base):
                          ["Extraction refused: not_regular_file"])
 
     def test_crlf_identity_with_read_text(self):
-        raw = (b"line one\r\nline two\r\n\xff\x80 tail\r\nlast\r\n")
+        # v0.22.0: the universal-newline identity keeps holding for an
+        # accepted UTF-8 input; invalid bytes are no longer replaced
+        # per byte (they are either strict-CP932 decoded or refused),
+        # so the identity corpus here is valid UTF-8 and the
+        # cp932-valid-bytes case is pinned by
+        # test_crlf_txt_with_cp932_valid_bytes above.
+        raw = (b"line one\r\nline two\r\nlast\r\n")
         p = self._write_bytes("crlf.txt", raw)
         eng = SieveLensEngine()
         obs = eng.observe(p)
         self.assertEqual(obs.h_states["H1"], 1)
-        reference = p.read_text(encoding="utf-8", errors="replace")
+        reference = p.read_text(encoding="utf-8")
         self.assertEqual(obs.segments[0].text, reference)
 
     def test_crlf_html_identity_with_read_text(self):
