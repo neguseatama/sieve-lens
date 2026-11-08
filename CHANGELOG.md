@@ -1,6 +1,41 @@
 # Changelog
 
-## [0.21.2] - 2026-11-06
+## [0.22.0] - 2026-11-08
+
+### Added
+- **`visible_text()` — the visible text of an observation.** Returns
+  only what a human reader would see: the segments that observe
+  `visible=True`, in order, joined by a single newline; empty
+  (whitespace-only) segments are dropped and nothing is re-extracted
+  (the result comes from the observation's own parse result). An
+  optional `strip` set removes invisible characters from that text
+  and reports per-kind counts in `removed`. The strip vocabulary is
+  closed: `zero_width_space` (U+200B), `word_joiner` (U+2060),
+  `bom_mid_text` (U+FEFF), `bidi_control` (U+202A-202E, U+2066-2069)
+  and `tag_chars` (U+E0000-E007F). ZWJ, ZWNJ and variation selectors
+  are not strip kinds - emoji joins and Japanese IVS survive - and a
+  tag-char run directly after U+1F3F4 is kept as part of the flag
+  emoji sequence. Unknown kinds are refused with ValueError.
+
+### Changed
+- **Plain text and HTML inputs follow the series-wide character-code
+  policy** (the reference is the Crowd 0.9.0 implementation): a
+  UTF-16/UTF-32 BOM is refused outright; the remaining candidates
+  are, in order, a UTF-8 BOM decoding as strict UTF-8, the whole
+  input as strict UTF-8, and the whole input as strict CP932
+  (Windows-31J); anything else is refused with
+  `unsupported_encoding`. `errors="replace"` is no longer used - one
+  bad byte sinks the candidate. When CP932 is adopted, one
+  `encoding_name` diagnostics item is added (the existing keys and
+  their order are unchanged; the new key is appended at the end).
+  **UTF-8 inputs observe byte-identically to 0.21.2, diagnostics
+  included**; accepted DOCX/XML reading is untouched.
+- The two L1 reading tests that pinned per-byte replacement of
+  invalid bytes now pin the policy above (the universal-newline
+  identity keeps holding on a valid UTF-8 corpus); the observation
+  goldens for accepted UTF-8 inputs are unchanged.
+
+## [0.21.2] - 2026-11-06 - 2026-11-06
 
 ### Fixed
 - **WordprocessingML parts with an unexpected root element inside the

@@ -1,4 +1,4 @@
-# Sieve Lens v0.21.2
+# Sieve Lens v0.22.0
 
 **Invisible Prompt Observation Engine**
 
@@ -164,6 +164,22 @@ Mask format: `H1H2H3H4-H5H6H7` (e.g., `1000-100`).
 
 - **Pinned character table** (v0.21+)
   Lens ships the character table the Sieve tools share (`chartable_v1.json`, fixed by sha256): the invisible characters, the look-alike twins, and the fullwidth/space/dash folding rules in one file. The loader verifies the pin on every load — a missing, tampered or malformed table is a hard error, never a silent fallback. See `docs/CHARTABLE.md`.
+
+- **Visible text extraction** (since v0.22.0)  
+  `visible_text(observation)` returns just what a human reader sees:
+  the visible segments in order, joined by a single newline; empty
+  segments are dropped and nothing is re-extracted. An optional
+  `strip` set removes the five invisible-character kinds
+  (zero-width spaces, word joiners, mid-text BOMs, bidi controls, tag
+  characters) with per-kind counts, while emoji joins (ZWJ), Japanese
+  IVS (variation selectors) and flag emoji sequences survive.
+
+- **Series-wide character codes for text and HTML** (since v0.22.0)  
+  Plain text and HTML inputs decode with the series-wide policy: UTF-8
+  BOM, then strict UTF-8, then strict CP932, refused otherwise;
+  UTF-16/UTF-32 BOMs are refused outright and `errors="replace"` is
+  never used. A CP932 detection adds one `encoding_name` diagnostics
+  item; UTF-8 inputs observe exactly as before.
 
 ## 📦 Installation
 

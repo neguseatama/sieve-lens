@@ -1230,10 +1230,10 @@ class TestL2T12Pins(L2Base):
                     (REPO_ROOT / rel).read_bytes()).hexdigest()
                 self.assertEqual(actual, pin)
 
-    def test_version_is_0_21_2(self):
-        self.assertEqual(__version__, "0.21.2")
+    def test_version_is_0_22_0(self):
+        self.assertEqual(__version__, "0.22.0")
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.21.2"', text)
+        self.assertIn('version = "0.22.0"', text)
 
     def test_core_imports_stdlib_only(self):
         import ast
@@ -1772,19 +1772,19 @@ class TestL22T10VersionAndPins(L2Base):
 
     REPO = Path(__file__).resolve().parent.parent
 
-    def test_version_0212_is_consistent(self):
-        self.assertEqual(sieve_lens.__version__, "0.21.2")
+    def test_version_0220_is_consistent(self):
+        self.assertEqual(sieve_lens.__version__, "0.22.0")
         self.assertIn(
-            'version = "0.21.2"',
+            'version = "0.22.0"',
             (self.REPO / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertIn(
-            "## [0.21.2]",
+            "## [0.22.0]",
             (self.REPO / "CHANGELOG.md").read_text(encoding="utf-8"))
         self.assertIn(
-            "# Sieve Lens v0.21.2",
+            "# Sieve Lens v0.22.0",
             (self.REPO / "README.md").read_text(encoding="utf-8"))
         self.assertIn(
-            "# Sieve Lens v0.21.2",
+            "# Sieve Lens v0.22.0",
             (self.REPO / "README.ja.md").read_text(encoding="utf-8"))
 
     def test_frozen_files_keep_their_bytes(self):
