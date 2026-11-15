@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.22.1] - 2026-11-15
+
+### Fixed
+- **The visible text of a PDF no longer contains invisible text.**
+  The visible page text and the hidden-text report are now built from
+  one shared classification of the content stream - the text render
+  mode state machine (``Tr`` sets the mode, ``q``/``Q`` save and
+  restore it, it persists across ``BT``/``ET``, and a Form XObject
+  invoked by ``Do`` inherits the mode at its invocation). Text shown
+  in render mode 3 (invisible) or 7 (clip only) never reaches the
+  visible text; modes 0, 1, 2, 4, 5 and 6 stay visible exactly as
+  drawn, and what remains keeps its 0.22.0 reading order. The mode 3
+  text keeps being reported as hidden text exactly as 0.22.0 reported
+  it, on every sample, and mode 7 stays unreported (no new observation
+  kind). A page whose render-mode state cannot be determined -
+  an unreadable content stream, a state-tracking failure, form nesting
+  beyond the walk limit - emits no visible text at all (fail closed)
+  and records the existing unobserved reason word ``Extraction
+  failed`` in its page location; other pages are unaffected.
+
 ## [0.22.0] - 2026-11-08
 
 ### Added
