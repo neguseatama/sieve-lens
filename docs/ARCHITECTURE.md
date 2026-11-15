@@ -137,6 +137,22 @@ document positions text, not what it says. Their scope:
 
 ---
 
+## PDF Visible Text (v0.22.1)
+
+The visible page text and the hidden-text report are built from one
+shared classification of the text render mode: text drawn in render
+mode 3 (invisible) or 7 (clip only) never reaches the visible text,
+and what remains keeps its 0.22.0 reading order. A scan PDF whose OCR
+layer is drawn invisibly over the page therefore yields an empty
+visible text while the observation reports the hidden text - this is
+the intended result, not a reading failure. A page whose render-mode
+state cannot be determined (unreadable content stream, state-tracking
+failure, form nesting beyond the walk limit) emits no visible text at
+all and records `Extraction failed` in its page location (fail
+closed); other pages are unaffected.
+
+---
+
 ## Known Boundaries
 
 | Boundary | Reason |
@@ -146,5 +162,5 @@ document positions text, not what it says. Their scope:
 | External CSS: local files only | The core H4 lane inspects inline CSS only; the optional `html-css` extensions resolve `<style>` blocks and *local* `<link>` stylesheets — remote resources are never fetched (offline principle) |
 | Semantic intent not evaluated | Requires language understanding |
 | Character tables fixed | New techniques require code update |
-| PDF Form XObject nesting capped at 8 levels | Deeper nests are skipped (cycle protection in the content-stream walk) |
+| PDF Form XObject nesting capped at 8 levels | Deeper nests are skipped by the observation walk (cycle protection); a page that DRAWS a form beyond the cap emits no visible text for that page (fail closed) |
 | DOCX hidden-text resolution is simplified | Toggles disagreeing across several levels, table-style formatting and some width/position tricks are out of scope |
