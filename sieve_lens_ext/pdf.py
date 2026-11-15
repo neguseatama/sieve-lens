@@ -709,7 +709,7 @@ class PdfExtractor:
             except Exception:
                 pass
 
-        if isinstance(s, bytes):
+        if isinstance(s, (bytes, bytearray)):
             if s.startswith(b"\xfe\xff"):
                 try:
                     return s[2:].decode("utf-16-be")
