@@ -1280,6 +1280,13 @@ class SieveLensEngine:
         }
         if encoding_name:
             diagnostics["encoding_name"] = encoding_name
+        # an extractor may carry file-level diagnostic counts (the PDF
+        # lane's color_unresolved / white_on_painted; keys appear only
+        # when the count is greater than zero, so existing outputs are
+        # unchanged)
+        extra_diagnostics = getattr(segments, "pdf_diagnostics", None)
+        if extra_diagnostics:
+            diagnostics.update(extra_diagnostics)
         return Observation(
             source=source,
             mask=full_mask,
