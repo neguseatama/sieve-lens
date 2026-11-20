@@ -1165,19 +1165,19 @@ class TestVisibleTextLNTFull(unittest.TestCase):
 
     def test_lnt10_version_pins_and_dependency_floor(self):
         import sieve_lens
-        self.assertEqual(sieve_lens.__version__, "0.22.1")
+        self.assertEqual(sieve_lens.__version__, "0.23.0")
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.22.1"', pyproject)
+        self.assertIn('version = "0.23.0"', pyproject)
         # the pypdf floor and the dependency set are unchanged
         self.assertIn('pdf = ["pypdf>=4.0"]', pyproject)
         self.assertIn("dependencies = []", pyproject)
         for name in ("README.md", "README.ja.md"):
             text = (_ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("# Sieve Lens v0.22.1", text)
+            self.assertIn("# Sieve Lens v0.23.0", text)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertTrue(changelog.startswith(
-            "# Changelog\n\n## [0.22.1]"),
-            "CHANGELOG must start with the [0.22.1] section")
+            "# Changelog\n\n## [0.23.0]"),
+            "CHANGELOG must start with the [0.23.0] section")
 
 
 if __name__ == "__main__":

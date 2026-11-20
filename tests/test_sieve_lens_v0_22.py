@@ -577,22 +577,22 @@ class TestLNT08FrozenUnchanged(unittest.TestCase):
 
 # ----------------------------------------------------------------------
 # LN-T09 — version consistency (the release-round pin: the literals
-# follow the version bump, most recently 0.22.0 -> 0.22.1)
+# follow the version bump, most recently 0.22.1 -> 0.23.0)
 # ----------------------------------------------------------------------
 
-class TestLNT09Version0221(unittest.TestCase):
+class TestLNT09Version0230(unittest.TestCase):
     REPO = REPO_ROOT
 
-    def test_version_is_0221_everywhere(self):
-        self.assertEqual(__version__, "0.22.1")
+    def test_version_is_0230_everywhere(self):
+        self.assertEqual(__version__, "0.23.0")
         pyproject = (self.REPO / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.22.1"', pyproject)
+        self.assertIn('version = "0.23.0"', pyproject)
         changelog = (self.REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertIn("## [0.22.1]", changelog)
+        self.assertIn("## [0.23.0]", changelog)
         for name in ("README.md", "README.ja.md"):
             with self.subTest(readme=name):
                 text = (self.REPO / name).read_text(encoding="utf-8")
-                self.assertIn("# Sieve Lens v0.22.1", text)
+                self.assertIn("# Sieve Lens v0.23.0", text)
 
 
 if __name__ == "__main__":
