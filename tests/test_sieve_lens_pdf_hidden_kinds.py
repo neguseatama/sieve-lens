@@ -323,6 +323,8 @@ class TestHiddenKindsLN2(unittest.TestCase):
                 self._position_invariants(name)
 
 
+_ROOT = Path(__file__).resolve().parent.parent
+
 # ======================================================================
 # LN2-T03..T15, T17 (the remaining kinds' pins, green phase of the
 # implementation; T15 and T17 turn green with the release and the docs

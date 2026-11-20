@@ -38,7 +38,7 @@ v
 | H1 | Parseability | Format-specific extraction succeeds |
 | H2 | Zero-Width Density | Symbolic density over body text |
 | H3 | Bidi Controls | Presence of directional control chars |
-| H4 | Format Concealment | Inline CSS hiding rules; DOCX concealment (vanish / low-contrast / tiny font / tracked deletions) |
+| H4 | Format Concealment | Inline CSS hiding rules; DOCX concealment (vanish / low-contrast / tiny font / tracked deletions); PDF hidden text (render modes 3/7, tiny font, off-page, off layer, white text) |
 | H5 | Out-of-Band Channel | Comments, metadata, hidden attrs |
 | H6 | Script Mixing | Homoglyph signature within tokens |
 | H7 | Contiguous Payload | Long runs of invisible characters |
@@ -137,19 +137,61 @@ document positions text, not what it says. Their scope:
 
 ---
 
-## PDF Visible Text (v0.22.1)
+## PDF Hidden Text (v0.23.0)
 
-The visible page text and the hidden-text report are built from one
-shared classification of the text render mode: text drawn in render
-mode 3 (invisible) or 7 (clip only) never reaches the visible text,
-and what remains keeps its 0.22.0 reading order. A scan PDF whose OCR
-layer is drawn invisibly over the page therefore yields an empty
-visible text while the observation reports the hidden text - this is
-the intended result, not a reading failure. A page whose render-mode
-state cannot be determined (unreadable content stream, state-tracking
-failure, form nesting beyond the walk limit) emits no visible text at
-all and records `Extraction failed` in its page location (fail
-closed); other pages are unaffected.
+The visible page text and the hidden-text report are built from ONE
+shared classification of the drawing state: the text render mode
+(`Tr`, saved and restored by `q`/`Q`, persisting across `BT`/`ET`,
+inherited by a Form XObject invoked by `Do`), the CTM (`cm`), the font
+size (`Tf`), the text matrix (`Tm`/`Td`/`TD`/`T*`/`TL`; `BT` resets
+it), the fill and stroke colors (`g`/`G`/`rg`/`RG`/`k`/`K`/`cs`/`CS`/
+`sc`/`scn`/`SC`/`SCN`) and the marked-content stack (`BDC`/`BMC`/`EMC`).
+
+The hidden kinds ride inside H4 with these labels:
+
+| Label | Kind | Definition |
+|-------|------|------------|
+| `invisible text, Tr 3` / `Tr 7` | render mode | text drawn in render mode 3 (invisible) or 7 (clip only). 0.22.1 only excluded mode 7 from the visible text; since 0.23.0 it is reported as hidden text too. |
+| `tiny_font` | tiny text | the effective font size - the `Tf` size x the scale of the text matrix x the scale of the CTM - is below **2.0 pt**. (The DOCX lane uses the same closed word for its own sense: `w:sz` <= 2 half-points.) |
+| `off_page` | off-page | the drawing origin (the text-matrix translation carried through the CTM) lies outside the page's view box (`/CropBox` when present, else `/MediaBox`). An origin inside the box keeps the text visible even when glyphs extend past the edge. `/Rotate` does not affect the judgment. |
+| `off_layer '<name>'` | hidden layer | text governed by an optional-content group or membership dictionary that is OFF in the default configuration (`/OCProperties /D`), through `BDC /OC ... EMC` (resolved via `/Properties`) or a Form XObject's `/OC`. OCMD policies (`AnyOn` / `AllOn` / `AnyOff` / `AllOff`) are applied to `/OCGs`. |
+| `white_text` | white text | the color the render mode draws with (0/4 fill, 1/5 stroke, 2/6 both) is near white - DeviceGray >= **0.98**, DeviceRGB all >= **0.98**, DeviceCMYK all <= **0.02** - and no non-white paint sits beneath it. |
+
+What a reader may find unexpected:
+
+- **White text on a painted background stays visible.** When one
+  non-near-white paint drawn BEFORE the text - a filled path
+  (`f` / `F` / `f*` / `B` / `b`) or an image `Do` - fully contains the
+  text's estimated box (width from the font's `/Widths`, else 1.0 x
+  the font size per character; height = the font size), the text is
+  treated as the slide-style "white banner on a colored rectangle"
+  and stays visible; the count lands in the diagnostics as
+  `white_on_painted`.
+- **Colors Lens cannot decide never become hidden.** Non-device color
+  spaces (`ICCBased`, `Indexed`, `Separation`, patterns) and operand
+  counts that do not match the current space leave the judgment open:
+  the text stays visible and the count lands in the diagnostics as
+  `color_unresolved`.
+
+One show operation hit by several kinds reports the first reason in
+the fixed order above (render mode, tiny, off-page, layer, white) and
+never reaches the visible text. The hidden pieces of one page (and of
+one form) join into one `css_hidden` segment per label, in the order
+the labels first occur; the visible text keeps its 0.22.1 reading
+order. A scan PDF whose OCR layer is drawn invisibly over the page
+therefore yields an empty visible text while the observation reports
+the hidden text - the intended result, not a reading failure.
+
+Fail-closed conditions (the page emits no visible text and records
+`Extraction failed` in its page location; other pages are unaffected):
+an unreadable content stream, a state-tracking failure (a malformed
+`Tr` / `Tf` / `Tm` / `cm` operand), form nesting beyond the walk limit
+(8), a form re-invoked under a different state, an unresolvable `/OC`
+reference, an unsupported `/VE`, and OCMD nesting beyond 8 levels.
+`Tz` (horizontal scaling) is deliberately not applied to `Td` offsets:
+pypdf 4.0.0 and 6.6.0 both measure `Td` offsets unscaled, and the
+visible side is pypdf's own machinery, so the origin formula follows
+that measured behavior.
 
 ---
 

@@ -18,23 +18,18 @@ domain of **machine-readable vs. human-visible divergence**.
 
 **English** | [日本語](README.ja.md)
 
-## 💡 Concept
+## What is Sieve Lens?
 
-Modern AI evaluation systems parse documents as text.
-Humans read documents as rendered output.
-These two views are not the same, and the gap between them can be exploited:
+Sieve Lens finds text that an AI can read as a prompt.
 
-- Zero-width characters (`U+200B`...) that a model reads but a human cannot see.
-- CSS rules (`display:none`) that hide text from a human but not from a parser.
-- Out-of-band channels (comments, metadata, headers, footnotes) that a parser
-  reads but a human never notices.
+Some documents contain text that a person can't see but an AI can read.
+Lens compares **the path an AI reads** (the text inside the document) with
+**the path a person sees** (what is drawn on screen), and reports **text
+the AI can read but a person can't see**.
 
-**Sieve Lens observes this divergence.**  
-It does not judge intent. It surfaces what is invisible, with location and
-decoded content, so that a human can decide what to do.
-
-> The name "Sieve Lens" comes from the design philosophy of seeing through a
-> document the way a lens reveals what the naked eye cannot.
+- The same document always gives the same result (deterministic).
+- Lens doesn't judge intent. It reports what it found.
+- It can also extract only the visible text (hidden text is not included).
 
 ---
 
