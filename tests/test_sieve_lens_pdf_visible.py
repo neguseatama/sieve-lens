@@ -965,12 +965,15 @@ class TestVisibleTextLNTFull(unittest.TestCase):
             self.assertIn(marker, vis)
         self.assertNotIn("invisM3", vis)
         self.assertNotIn("clippedM7", vis)
-        # the observation reports ONLY the mode 3 piece: mode 7 is not
-        # a new observation kind (0.22.0 did not report it either)
+        # the observation reports the mode 3 piece AND, since 0.23.0,
+        # the mode 7 piece (the release's Changed item: render mode 7
+        # is reported as hidden text, not merely excluded - 0.22.0 and
+        # 0.22.1 only excluded it from the visible side)
         hidden = self._hidden_segments(obs)
-        self.assertEqual(len(hidden), 1)
-        self.assertEqual(hidden[0].text, "invisM3")
-        self.assertEqual(hidden[0].location, "page 1 (invisible text, Tr 3)")
+        self.assertEqual([(s.text, s.location) for s in hidden],
+                         [("invisM3", "page 1 (invisible text, Tr 3)"),
+                          ("clippedM7",
+                           "page 1 (invisible text, Tr 7)")])
         self.assertEqual(obs.mask, "1001-000")
 
     # --- LN-T04 --------------------------------------------------------
@@ -1162,19 +1165,19 @@ class TestVisibleTextLNTFull(unittest.TestCase):
 
     def test_lnt10_version_pins_and_dependency_floor(self):
         import sieve_lens
-        self.assertEqual(sieve_lens.__version__, "0.22.1")
+        self.assertEqual(sieve_lens.__version__, "0.23.0")
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.22.1"', pyproject)
+        self.assertIn('version = "0.23.0"', pyproject)
         # the pypdf floor and the dependency set are unchanged
         self.assertIn('pdf = ["pypdf>=4.0"]', pyproject)
         self.assertIn("dependencies = []", pyproject)
         for name in ("README.md", "README.ja.md"):
             text = (_ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("# Sieve Lens v0.22.1", text)
+            self.assertIn("# Sieve Lens v0.23.0", text)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertTrue(changelog.startswith(
-            "# Changelog\n\n## [0.22.1]"),
-            "CHANGELOG must start with the [0.22.1] section")
+            "# Changelog\n\n## [0.23.0]"),
+            "CHANGELOG must start with the [0.23.0] section")
 
 
 if __name__ == "__main__":

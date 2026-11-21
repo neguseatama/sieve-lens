@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.23.0] - 2026-11-20
+
+### Added
+- **PDF hidden-text observation widens to five kinds.** One shared
+  classification of the drawing state (render mode, CTM, font size,
+  text matrix, fill/stroke colors, marked content) now reports, inside
+  H4, text that is drawn tiny (the effective size - `Tf` x the text
+  matrix scale x the CTM scale - below **2.0 pt**), outside the page's
+  view box (`/CropBox`, else `/MediaBox`; `/Rotate` does not matter),
+  inside an optional-content layer that is OFF in the default
+  configuration (`/OCProperties /D`, through `BDC /OC ... EMC` or a
+  form's `/OC`; OCMD policies applied; unresolvable references and
+  `/VE` fail closed), or in a near-white color (DeviceGray >= 0.98 /
+  DeviceRGB all >= 0.98 / DeviceCMYK all <= 0.02) with no non-white
+  paint beneath it. White text on a painted background stays visible
+  (the slide-style false-positive guard) and undecidable colors never
+  become hidden; both are counted in the diagnostics
+  (`white_on_painted`, `color_unresolved`, keys only when the count is
+  greater than zero). Every kind is also excluded from the visible
+  text, which is built from the same classification; the new labels
+  are `off_page`, `off_layer '<name>'` and `white_text`, while tiny
+  text rides the existing DOCX word `tiny_font`.
+
+### Changed
+- **Render mode 7 (clip only) is now reported as hidden text.**
+  0.22.1 only excluded it from the visible text; the observation now
+  reports it under the existing `invisible text, Tr N` label and the
+  affected text stays excluded from the visible text.
+- A page hit by several hidden kinds reports one reason per show
+  operation, in the fixed order render mode -> tiny -> off-page ->
+  layer -> white; the axes (H1-H7) and the mask format are unchanged.
+- **off_layer labels never carry a PDF-authored name raw.** The layer
+  name the label shows - the group's `/Name` or the BDC property key -
+  is cleaned before it is emitted: printable characters only (control
+  and format characters removed, whitespace runs collapsed to one
+  space) and capped at 40 characters (`...` marks the cap;
+  `LAYER_LABEL_MAX_CHARS`). A hostile layer name can therefore not
+  smuggle text or newlines into a segment location (LN2-T18).
+
+### Fixed
+- The per-form raw-stream rescue no longer includes hidden show
+  operations: in 0.22.1 a drawn form's mode-3 text containing
+  zero-width characters could reach the visible body through the raw
+  rescue (measured on 0.22.1; no 0.22.0 sample covered it). The page
+  level already respected the classification.
+
 ## [0.22.1] - 2026-11-15
 
 ### Fixed

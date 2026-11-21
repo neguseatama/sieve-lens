@@ -1,5 +1,5 @@
 """
-Sieve Lens v0.22.1 - Invisible Prompt Observation Engine
+Sieve Lens v0.23.0 - Invisible Prompt Observation Engine
 
 Sieve Lens observes documents for invisible content that may be intended to
 influence AI-based evaluation systems. It reports evidence; it does not
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
 
-__version__ = "0.22.1"
+__version__ = "0.23.0"
 
 
 # ----------------------------------------------------------------------
@@ -1178,7 +1178,7 @@ class _DocxExtractor(_Extractor):
 # ----------------------------------------------------------------------
 
 class SieveLensEngine:
-    """Sieve Lens v0.22.1 observation engine."""
+    """Sieve Lens v0.23.0 observation engine."""
 
     def __init__(
         self,
@@ -1280,6 +1280,13 @@ class SieveLensEngine:
         }
         if encoding_name:
             diagnostics["encoding_name"] = encoding_name
+        # an extractor may carry file-level diagnostic counts (the PDF
+        # lane's color_unresolved / white_on_painted; keys appear only
+        # when the count is greater than zero, so existing outputs are
+        # unchanged)
+        extra_diagnostics = getattr(segments, "pdf_diagnostics", None)
+        if extra_diagnostics:
+            diagnostics.update(extra_diagnostics)
         return Observation(
             source=source,
             mask=full_mask,
