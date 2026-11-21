@@ -6,7 +6,13 @@ effective font size is below 2.0 pt is hidden; the text matrix and the
 CTM scale it), LN2-T06 (white text is hidden only when no non-white
 paint sits beneath it - the slide-style false-positive regression) and
 LN2-T09 (the position invariant of LN-T06 widened to the new kinds)
-enter the suite BEFORE the implementation and fail on the 0.22.1 tree.
+enter the suite BEFORE the implementation and fail on the
+0.22.1 tree.
+
+LN2-T18 (the off_layer label hardening) enters later, red on the
+0.23.0 tip 8156131, per the design chat's pre-publication check of
+2026-11-20: a PDF-authored layer name must not ride raw into a
+segment location.
 
 The one judgment rule (design request section 1, carried over from
 0.22.1): the observation and the visible text are built from the SAME
@@ -328,11 +334,13 @@ _ROOT = Path(__file__).resolve().parent.parent
 # ======================================================================
 # LN2-T03..T15, T17 (the remaining kinds' pins, green phase of the
 # implementation; T15 and T17 turn green with the release and the docs
-# commits respectively, as LN-T10 did in 0.22.1)
+# commits respectively, as LN-T10 did in 0.22.1) plus LN2-T18, the
+# off_layer label hardening (red on the 0.23.0 tip 8156131 per the
+# design chat's pre-publication check of 2026-11-20).
 # ======================================================================
 
 from pypdf.generic import (  # noqa: E402
-    ArrayObject, FloatObject, RectangleObject,
+    ArrayObject, FloatObject, RectangleObject, TextStringObject,
 )
 
 _M = _num  # shorthand for matrix/coordinate bytes
@@ -481,6 +489,39 @@ def _build_full(path, pages, *, cropbox=None, rotate=None,
             NameObject("/OCGs"): ArrayObject(all_groups),
         })
 
+    with open(path, "wb") as f:
+        writer.write(f)
+
+
+def _build_named_layer(path, name, *, key="/Pr0", body="layered off."):
+    """LN2-T18: one-page PDF whose OFF optional-content group carries
+    its /Name as a TEXT string (the shapes above name the group with
+    a PDF name), so the group name can carry arbitrary PDF-authored
+    text."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font_ref = writer._add_object(font)
+    ocg = DictionaryObject({
+        NameObject("/Type"): NameObject("/OCG"),
+        NameObject("/Name"): TextStringObject(name)})
+    ocg_ref = writer._add_object(ocg)
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): font_ref}),
+        NameObject("/Properties"): DictionaryObject(
+            {NameObject(key): ocg_ref})})
+    writer._root_object[NameObject("/OCProperties")] = DictionaryObject({
+        NameObject("/D"): DictionaryObject(
+            {NameObject("/OFF"): ArrayObject([ocg_ref])}),
+        NameObject("/OCGs"): ArrayObject([ocg_ref])})
+    stream = DecodedStreamObject()
+    stream.set_data(b"/MC0 " + key.encode("ascii") + b" BDC "
+                    + _text_show(body) + b" EMC")
+    page[NameObject("/Contents")] = writer._add_object(stream)
     with open(path, "wb") as f:
         writer.write(f)
 
@@ -963,6 +1004,62 @@ class TestHiddenKindsLN2Full(unittest.TestCase):
             self.assertIn(word, docs)
         self.assertNotIn("off_screen", docs)
         self.assertNotIn("tiny_text", docs)
+
+    # --- LN2-T18 --------------------------------------------------------
+
+    def test_ln2t18_off_layer_label_cleans_the_name(self):
+        """LN2-T18 (design chat pre-publication check 2026-11-20): the
+        label keeps printable characters only - control and format
+        characters (newlines, ESC, bidi overrides, ...) are removed -
+        and the payload beyond the cap is gone."""
+        hostile = "\n\x01\x1b injected\t" + "PAD " * 20 + "SECRETZQX"
+        p = self._path("hostile_layer")
+        _build_named_layer(p, hostile)
+        obs = self.engine.observe(p)
+        hidden = [s for s in obs.segments if s.kind == "css_hidden"]
+        self.assertEqual(len(hidden), 1)
+        loc = hidden[0].location
+        self.assertIn("off_layer", loc)
+        for ch in loc:
+            self.assertTrue(ch.isprintable() or ch == " ", repr(loc))
+        self.assertNotIn("SECRETZQX", loc)
+        self.assertTrue(loc.endswith("...')"), loc)
+        # the layer's text stays hidden exactly as in LN2-T04
+        self.assertNotIn("layered off.", visible_text(obs).text)
+
+    def test_ln2t18_off_layer_label_caps_the_name_at_40_characters(self):
+        """LN2-T18: 40 characters stay complete, 41 gain the cap
+        marker."""
+        for limit, marked in ((40, False), (41, True)):
+            with self.subTest(limit=limit):
+                p = self._path("cap_%d" % limit)
+                _build_named_layer(p, "A" * limit)
+                obs = self.engine.observe(p)
+                loc = [s for s in obs.segments
+                       if s.kind == "css_hidden"][0].location
+                self.assertEqual(
+                    loc, "page 1 (off_layer '%s%s')"
+                    % ("A" * 40, "..." if marked else ""))
+
+    def test_ln2t18_off_layer_label_falls_back_to_the_key(self):
+        """LN2-T18: a name that cleans to nothing falls back to the
+        BDC property key (itself cleaned)."""
+        p = self._path("blank_name")
+        _build_named_layer(p, "\n\x01\t\x1b")
+        obs = self.engine.observe(p)
+        loc = [s for s in obs.segments
+               if s.kind == "css_hidden"][0].location
+        self.assertEqual(loc, "page 1 (off_layer '/Pr0')")
+
+    def test_ln2t18_off_layer_label_collapses_whitespace_runs(self):
+        """LN2-T18: whitespace runs inside the name collapse to one
+        space."""
+        p = self._path("spaced_name")
+        _build_named_layer(p, "Layer\t\tOne\n\nName")
+        obs = self.engine.observe(p)
+        loc = [s for s in obs.segments
+               if s.kind == "css_hidden"][0].location
+        self.assertEqual(loc, "page 1 (off_layer 'Layer One Name')")
 
 
 class _FakeWriter:
