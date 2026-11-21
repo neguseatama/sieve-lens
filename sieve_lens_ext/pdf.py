@@ -143,6 +143,15 @@ WHITE_CMYK_MAX = 0.02
 # 1.0 x the font size per character (a deliberate over-estimate).
 WIDTH_FALLBACK_FACTOR = 1.0
 
+# LN2-T18 (the design chat's pre-publication check, 2026-11-20): the
+# off_layer label never carries PDF-authored name text raw.  The
+# group's /Name and the BDC property key are cleaned before they enter
+# the label - printable characters only (control and format characters
+# removed, whitespace runs collapsed to one space) - and a name longer
+# than this many characters is capped (an ellipsis marker follows a
+# capped name).
+LAYER_LABEL_MAX_CHARS = 40
+
 # The paint operators whose fill counts as a background (design request
 # 3.1-5, literal list: f / F / f* / B / b) plus the image Do.
 PAINT_FILL_OPS = (b"f", b"F", b"f*", b"B", b"b")
@@ -629,17 +638,35 @@ class PdfExtractor:
             return "white_text", "white_text"
         return None, None
 
+    def _clean_label_text(self, text):
+        """The name text of a PDF-authored label part: printable
+        characters only (control and format characters are removed,
+        every whitespace run collapses to one space), capped at
+        LAYER_LABEL_MAX_CHARS with an ellipsis marker.  The PDF's own
+        name text is never emitted raw (LN2-T18)."""
+        spaced = "".join(
+            " " if ch.isspace() else ch
+            for ch in text if ch.isspace() or ch.isprintable())
+        cleaned = " ".join(spaced.split())
+        if len(cleaned) > LAYER_LABEL_MAX_CHARS:
+            cleaned = cleaned[:LAYER_LABEL_MAX_CHARS] + "..."
+        return cleaned
+
     def _layer_label(self, item, key):
-        """The off_layer label: the group's /Name when present, else
-        the BDC property key, else the bare word."""
+        """The off_layer label: the group's cleaned /Name when present,
+        else the cleaned BDC property key, else the bare word."""
         try:
             name = item.get("/Name")
         except Exception:
             name = None
         if isinstance(name, str) and name:
-            return "off_layer '%s'" % name
+            cleaned = self._clean_label_text(name)
+            if cleaned:
+                return "off_layer '%s'" % cleaned
         if key:
-            return "off_layer '%s'" % key
+            cleaned = self._clean_label_text(key)
+            if cleaned:
+                return "off_layer '%s'" % cleaned
         return "off_layer"
 
     def _show_color_white(self, state):

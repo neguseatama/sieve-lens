@@ -31,6 +31,13 @@
 - A page hit by several hidden kinds reports one reason per show
   operation, in the fixed order render mode -> tiny -> off-page ->
   layer -> white; the axes (H1-H7) and the mask format are unchanged.
+- **off_layer labels never carry a PDF-authored name raw.** The layer
+  name the label shows - the group's `/Name` or the BDC property key -
+  is cleaned before it is emitted: printable characters only (control
+  and format characters removed, whitespace runs collapsed to one
+  space) and capped at 40 characters (`...` marks the cap;
+  `LAYER_LABEL_MAX_CHARS`). A hostile layer name can therefore not
+  smuggle text or newlines into a segment location (LN2-T18).
 
 ### Fixed
 - The per-form raw-stream rescue no longer includes hidden show
