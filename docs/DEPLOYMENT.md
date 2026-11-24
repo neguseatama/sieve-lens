@@ -60,7 +60,7 @@ The container runs as a non-root user in the provided Dockerfile.
 
 
 ## 5. Handling Untrusted Files
-Sieve Lens is not a sandbox. If a document format is known to have
+Sieve Lens does not isolate itself. If a document format is known to have
 exploitable parsers in the Python standard library, the recommendation is to
 run Sieve Lens in a container with:
 

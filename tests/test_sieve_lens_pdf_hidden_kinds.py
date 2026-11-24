@@ -970,19 +970,19 @@ class TestHiddenKindsLN2Full(unittest.TestCase):
 
     def test_ln2t15_version_pins_and_dependency_floor(self):
         import sieve_lens
-        self.assertEqual(sieve_lens.__version__, "0.23.0")
+        self.assertEqual(sieve_lens.__version__, "0.24.0")
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.23.0"', pyproject)
+        self.assertIn('version = "0.24.0"', pyproject)
         # the pypdf floor and the dependency set are unchanged
         self.assertIn('pdf = ["pypdf>=4.0"]', pyproject)
         self.assertIn("dependencies = []", pyproject)
         for name in ("README.md", "README.ja.md"):
             text = (_ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("# Sieve Lens v0.23.0", text)
+            self.assertIn("# Sieve Lens v0.24.0", text)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertTrue(changelog.startswith(
-            "# Changelog\n\n## [0.23.0]"),
-            "CHANGELOG must start with the [0.23.0] section")
+            "# Changelog\n\n## [0.24.0]"),
+            "CHANGELOG must start with the [0.24.0] section")
 
     # --- LN2-T17 --------------------------------------------------------
 
@@ -1064,6 +1064,1200 @@ class TestHiddenKindsLN2Full(unittest.TestCase):
 
 class _FakeWriter:
     """Unused placeholder kept out of the sample paths."""
+
+
+# ======================================================================
+# LN3 (0.24.0): three further hidden kinds (transparent, clipped,
+# same_color), the structured kind fields on the hidden segments, and
+# the form-name/metadata-key cleaning.  The structured fields ride the
+# one shared classification: a hidden PDF segment carries `how` (a word
+# of PDF_HIDDEN_HOWS) and `page` (the 1-based page number); segments
+# without a kind word carry neither attribute, so no serialized form of
+# an existing sample or a non-PDF lane can gain a key.
+# ======================================================================
+
+import dataclasses  # noqa: E402
+
+from pypdf.generic import ArrayObject, FloatObject  # noqa: E402
+
+
+def _soft_mask(writer):
+    """A minimal luminosity /SMask dictionary (the presence matters,
+    never its content)."""
+    mask_stream = DecodedStreamObject()
+    mask_stream.set_data(b"\x00")
+    mask_stream[NameObject("/Type")] = NameObject("/Mask")
+    mask_stream[NameObject("/S")] = NameObject("/Luminosity")
+    mask_stream[NameObject("/G")] = writer._add_object(mask_stream)
+    return writer._add_object(DictionaryObject({
+        NameObject("/Type"): NameObject("/Mask"),
+        NameObject("/S"): NameObject("/Luminosity"),
+        NameObject("/G"): mask_stream}))
+
+
+def _build_ln3(path, content, *, extgstates=None, forms=None):
+    """One-page PDF with a font, optional /ExtGState entries and
+    optional Form XObjects (keys may be arbitrary PDF name text).
+
+    extgstates maps a name to a spec dict: {"ca": v, "CA": v,
+    "bm": "/Multiply", "smask": True}.
+    """
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font_ref = writer._add_object(font)
+    resources = DictionaryObject({
+        NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): font_ref})})
+    if extgstates:
+        gs_res = DictionaryObject()
+        for name, spec in extgstates.items():
+            gs = DictionaryObject({
+                NameObject("/Type"): NameObject("/ExtGState")})
+            if "ca" in spec:
+                gs[NameObject("/ca")] = FloatObject(spec["ca"])
+            if "CA" in spec:
+                gs[NameObject("/CA")] = FloatObject(spec["CA"])
+            if "bm" in spec:
+                gs[NameObject("/BM")] = NameObject(spec["bm"])
+            if spec.get("smask"):
+                gs[NameObject("/SMask")] = _soft_mask(writer)
+            gs_res[NameObject("/" + name.lstrip("/"))] = \
+                writer._add_object(gs)
+        resources[NameObject("/ExtGState")] = gs_res
+    if forms:
+        xobjs = DictionaryObject()
+        for name, fcontent in forms.items():
+            xobjs[NameObject(name)] = _form_stream(writer, font_ref,
+                                                   fcontent)
+        resources[NameObject("/XObject")] = xobjs
+    stream = DecodedStreamObject()
+    stream.set_data(content)
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    page[NameObject("/Resources")] = resources
+    with open(path, "wb") as f:
+        writer.write(f)
+
+
+def _build_ln3_ascent(path, content, ascent):
+    """One-page PDF whose font carries a /FontDescriptor with the
+    given /Ascent (the per-mille glyph height the descriptor claims)."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    descriptor = DictionaryObject({
+        NameObject("/Type"): NameObject("/FontDescriptor"),
+        NameObject("/FontName"): NameObject("/Helvetica"),
+        NameObject("/Flags"): NumberObject(32),
+        NameObject("/FontBBox"): ArrayObject([
+            NumberObject(-211), NumberObject(-301),
+            NumberObject(716), NumberObject(1014)]),
+        NameObject("/ItalicAngle"): NumberObject(0),
+        NameObject("/Ascent"): NumberObject(ascent),
+        NameObject("/Descent"): NumberObject(-211),
+        NameObject("/CapHeight"): NumberObject(717),
+        NameObject("/StemV"): NumberObject(87)})
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+        NameObject("/FontDescriptor"): writer._add_object(descriptor)})
+    font_ref = writer._add_object(font)
+    resources = DictionaryObject({
+        NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): font_ref})})
+    stream = DecodedStreamObject()
+    stream.set_data(content)
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    page[NameObject("/Resources")] = resources
+    with open(path, "wb") as f:
+        writer.write(f)
+
+
+_LN3_FORM_NAMES = ("/F\x01\x00m", "/F\u202eab", "/F\tr\tb",
+                   "/F" + "N" * 60)
+
+
+def _ln3_form_content():
+    return b"BT /F1 12 Tf 10 100 Td 3 Tr (form ghost.) Tj ET"
+
+
+@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
+class TestHiddenKindsLN3(unittest.TestCase):
+
+    def setUp(self):
+        self.engine = SieveLensEngine()
+        install(self.engine)
+        self._tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _path(self, name):
+        return Path(self._tmpdir.name) / (name + ".pdf")
+
+    def _observe(self, name, content, **kw):
+        p = self._path(name)
+        _build_ln3(p, content, **kw)
+        return self.engine.observe(p)
+
+    def _hidden(self, obs):
+        return [s for s in obs.segments if s.kind == "css_hidden"]
+
+    # --- LN3-T01 --------------------------------------------------------
+
+    def test_ln3t01_kind_word_and_page_match_location(self):
+        """LN3-T01: every hidden PDF segment carries `how` (a word of
+        PDF_HIDDEN_HOWS) and `page` (the 1-based page number), both
+        derived from the same classification the location label rides;
+        segments without a kind word carry neither attribute, and no
+        serialized form of an existing sample or a non-PDF lane gains a
+        key."""
+        from sieve_lens_ext.pdf import PDF_HIDDEN_HOWS
+
+        samples = [
+            ("tr3", _text_show("Visible line.", y=700) + b" "
+                    + _text_show("Ghost memo.", mode=3, y=680),
+             "page 1 (invisible text, Tr 3)", "tr3", {}, {}),
+            ("tr7", _text_show("Plain line.", y=700) + b" "
+                    + _text_show("Clip memo.", mode=7, y=680),
+             "page 1 (invisible text, Tr 7)", "tr7", {}, {}),
+            ("tiny_font", _text_show("small print.", size=1.9, y=700),
+             "page 1 (tiny_font)", "tiny_font", {}, {}),
+            ("transparent", b"/GSa gs "
+                            + _text_show("ghost alpha.", y=700),
+             "page 1 (transparent)", "transparent",
+             {"GSa": {"ca": 0.0}}, {}),
+        ]
+        for name, content, location, word, gs, forms in samples:
+            with self.subTest(sample=name):
+                obs = self._observe(name, content, extgstates=gs,
+                                    forms=forms)
+                hidden = self._hidden(obs)
+                self.assertEqual(len(hidden), 1)
+                seg = hidden[0]
+                self.assertEqual(seg.location, location)
+                # the structured fields ride the same judgment
+                self.assertEqual(getattr(seg, "how", None), word)
+                self.assertIn(getattr(seg, "how", None), PDF_HIDDEN_HOWS)
+                self.assertEqual(getattr(seg, "page", None), 1)
+                # the fields exist only when a value exists
+                self.assertIn("how", vars(seg))
+                self.assertIn("page", vars(seg))
+                # the serialized form of the segment is the 0.23 shape:
+                # no kind word and no page number as serialized keys
+                self.assertEqual(set(dataclasses.asdict(seg)),
+                                 {"text", "visible", "kind", "location"})
+                vis = [s for s in obs.segments if s.visible]
+                for seg in vis:
+                    self.assertNotIn("how", vars(seg))
+                    self.assertNotIn("page", vars(seg))
+                    self.assertIsNone(getattr(seg, "how", None))
+                    self.assertIsNone(getattr(seg, "page", None))
+                    self.assertEqual(set(dataclasses.asdict(seg)),
+                                     {"text", "visible", "kind",
+                                      "location"})
+                self.assertNotIn("Ghost memo.", visible_text(obs).text)
+                self.assertNotIn("ghost alpha.", visible_text(obs).text)
+
+    def test_ln3t01_no_new_keys_outside_the_pdf_lane(self):
+        """LN3-T01: the text and the HTML lanes never gain the kind
+        fields - hidden or visible."""
+        from sieve_lens_ext.html_css import install as install_html
+
+        engine = SieveLensEngine()
+        install(engine)
+        install_html(engine)
+        html = ("<!doctype html><html><head><style>"
+                ".h{display:none}</style></head><body>"
+                "<p>plain html.</p><span class=h>hidden html.</span>"
+                "</body></html>")
+        p = Path(self._tmpdir.name) / "lane.html"
+        p.write_text(html, encoding="utf-8")
+        obs_html = engine.observe(p)
+        obs_text = engine.observe_text("plain text.\nhidden\u200bzero.")
+        for obs in (obs_html, obs_text):
+            for seg in obs.segments:
+                self.assertNotIn("how", vars(seg))
+                self.assertNotIn("page", vars(seg))
+                self.assertIsNone(getattr(seg, "how", None))
+                self.assertIsNone(getattr(seg, "page", None))
+                self.assertEqual(set(dataclasses.asdict(seg)),
+                                 {"text", "visible", "kind", "location"})
+        self.assertTrue(any(s.kind == "css_hidden"
+                            for s in obs_html.segments))
+
+    # --- LN3-T02 --------------------------------------------------------
+
+    def test_ln3t02_adversarial_form_name_is_cleaned(self):
+        """LN3-T02: a PDF-authored form name rides the same cleaning as
+        the layer name - printable characters only, whitespace runs
+        collapsed, capped at 40 characters with the cap marker.  The
+        structured kind fields of the form's hidden text stay the bare
+        word and the page number (no free text)."""
+        forms = {name: _ln3_form_content()
+                 for name in _LN3_FORM_NAMES}
+        content = (_ln3_form_content().replace(b"10 100", b"50 700")
+                   + b" " + b" ".join(
+                       name.encode("latin-1", "ignore") + b" Do"
+                       for name in _LN3_FORM_NAMES))
+        obs = self._observe("bad_forms", content, forms=forms)
+        locations = [s.location for s in self._hidden(obs)]
+        self.assertEqual(len(locations), 5, locations)
+        self.assertIn("page 1 (form '/Fm', invisible text, Tr 3)",
+                      locations)
+        self.assertIn("page 1 (form '/Fab', invisible text, Tr 3)",
+                      locations)
+        self.assertIn("page 1 (form '/F r b', invisible text, Tr 3)",
+                      locations)
+        self.assertIn("page 1 (form '/F%s...', invisible text, Tr 3)"
+                      % ("N" * 38), locations)
+        for seg in self._hidden(obs):
+            self.assertEqual(getattr(seg, "how", None), "tr3")
+            self.assertEqual(getattr(seg, "page", None), 1)
+
+    # --- LN3-T04 --------------------------------------------------------
+
+    def test_ln3t04_transparent_fill_hides_at_the_threshold(self):
+        """LN3-T04: fill alpha at or below 0.02 hides the text; above
+        the threshold the text stays visible."""
+        obs = self._observe(
+            "fill_alpha",
+            b"/GSa gs " + _text_show("ghost zero.", y=700) + b" "
+            + b"/GSb gs " + _text_show("ghost boundary.", y=680) + b" "
+            + b"/GSc gs " + _text_show("visible thin.", y=660),
+            extgstates={"GSa": {"ca": 0.0}, "GSb": {"ca": 0.02},
+                        "GSc": {"ca": 0.03}})
+        vis = visible_text(obs).text
+        self.assertNotIn("ghost zero.", vis)
+        self.assertNotIn("ghost boundary.", vis)
+        self.assertIn("visible thin.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (transparent)")
+        self.assertEqual(hidden[0].text,
+                         "ghost zero.ghost boundary.")
+        self.assertEqual(getattr(hidden[0], "how", None), "transparent")
+        self.assertEqual(obs.mask, "1001-000")
+        self.assertNotIn("alpha_unresolved", obs.diagnostics)
+
+    def test_ln3t04_transparent_stroke_lane_and_q_q_state(self):
+        """LN3-T04: stroke alpha (/CA) judges the stroke lanes (modes 1
+        and 5), and q/Q save and restore the alpha state - the same
+        setting inside q/Q leaves the outer state untouched."""
+        obs = self._observe(
+            "stroke_alpha",
+            _text_show("plain stroke.", mode=1, y=700)
+            + b" q /GSa gs Q "
+            + _text_show("restored stroke.", mode=1, y=680) + b" "
+            + b"/GSa gs "
+            + _text_show("stroke ghost.", mode=1, y=660),
+            extgstates={"GSa": {"CA": 0.0}})
+        vis = visible_text(obs).text
+        self.assertIn("plain stroke.", vis)
+        self.assertIn("restored stroke.", vis)
+        self.assertNotIn("stroke ghost.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (transparent)")
+        self.assertEqual(obs.mask, "1001-000")
+
+    def test_ln3t04_threshold_precedes_smask_and_bm(self):
+        """LN3-T04: the threshold judgment comes first - at or below the
+        threshold the text is hidden even under a soft mask or a
+        non-normal blend mode; only an opacity above the threshold with
+        a soft mask or blend mode in effect stays visible with the
+        alpha_unresolved counter."""
+        obs = self._observe(
+            "alpha_order",
+            b"/GSd gs " + _text_show("masked ghost.", y=700) + b" "
+            + b"/GSe gs " + _text_show("masked thin.", y=680) + b" "
+            + b"/GSf gs " + _text_show("blended thin.", y=660),
+            extgstates={"GSd": {"ca": 0.0, "smask": True},
+                        "GSe": {"ca": 0.03, "smask": True},
+                        "GSf": {"ca": 1.0, "bm": "/Multiply"}})
+        vis = visible_text(obs).text
+        # below the threshold: hidden even under the soft mask
+        self.assertNotIn("masked ghost.", vis)
+        self.assertIn("masked thin.", vis)
+        self.assertIn("blended thin.", vis)
+        hidden = [s for s in self._hidden(obs)
+                  if s.text == "masked ghost."]
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (transparent)")
+        # above the threshold with a soft mask / blend mode: visible,
+        # counted once per show operation
+        self.assertEqual(obs.diagnostics.get("alpha_unresolved"), 2)
+
+    # --- LN3-T05 --------------------------------------------------------
+
+    def test_ln3t05_clip_out_partial_and_empty(self):
+        """LN3-T05: text whose range never intersects the clip
+        rectangle is hidden; a partial overlap stays visible; an empty
+        clip hides everything."""
+        clip = b"50 650 400 60 re W n "
+        obs = self._observe(
+            "clip_out",
+            clip + _text_show("outside band.", y=730) + b" "
+            + _text_show("inside band.", y=680))
+        vis = visible_text(obs).text
+        self.assertNotIn("outside band.", vis)
+        self.assertIn("inside band.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual([(s.location, s.text) for s in hidden],
+                         [("page 1 (clipped)", "outside band.")])
+        self.assertEqual(getattr(hidden[0], "how", None), "clipped")
+        self.assertEqual(obs.mask, "1001-000")
+
+        obs = self._observe(
+            "clip_partial",
+            clip + _text_show("crossing band.", y=645))
+        self.assertIn("crossing band.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+        obs = self._observe(
+            "clip_empty",
+            b"100 100 0 50 re W n "
+            + _text_show("nowhere text.", y=700) + b" "
+            + _text_show("more nowhere.", y=500))
+        self.assertEqual(visible_text(obs).text, "")
+        hidden = self._hidden(obs)
+        self.assertEqual([s.location for s in hidden],
+                         ["page 1 (clipped)"])
+        self.assertEqual(obs.mask, "1001-000")
+
+    # --- LN3-T06 --------------------------------------------------------
+
+    def test_ln3t06_bstar_fill_is_a_background(self):
+        """LN3-T06: the fill+stroke even-odd operator B* paints a
+        background like f/B/b do - white text over it stays visible via
+        the slide-style guard."""
+        obs = self._observe(
+            "bstar_bg",
+            b"0.8 0.1 0.1 rg 50 650 400 60 re B* "
+            + _text_show("White banner.", color=_WHITE, y=680)
+            + b" " + _text_show("Black body text.", color=_BLACK,
+                                y=600))
+        vis = visible_text(obs).text
+        self.assertIn("White banner.", vis)
+        self.assertIn("Black body text.", vis)
+        self.assertEqual(obs.mask, "1000-000")
+        self.assertEqual(obs.diagnostics.get("white_on_painted"), 1)
+
+    def test_ln3t06_same_color_over_a_non_white_rect_hides(self):
+        """LN3-T06: text whose color matches the one non-white painted
+        rectangle beneath it (every component within 0.02) is hidden as
+        same_color; a different color stays visible."""
+        rect = b"0.8 0.1 0.1 rg 50 650 400 60 re f "
+        obs = self._observe(
+            "same_color",
+            rect + _text_show("Hidden label.", color=b"0.8 0.1 0.1 rg ",
+                              y=680)
+            + b" " + _text_show("Different label.",
+                                color=b"0.1 0.1 0.8 rg ", y=640))
+        vis = visible_text(obs).text
+        self.assertNotIn("Hidden label.", vis)
+        self.assertIn("Different label.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual([(s.location, s.text) for s in hidden],
+                         [("page 1 (same_color)", "Hidden label.")])
+        self.assertEqual(getattr(hidden[0], "how", None), "same_color")
+        self.assertEqual(obs.mask, "1001-000")
+
+    # --- LN3-T07 --------------------------------------------------------
+
+    def test_ln3t07_first_reason_in_the_fixed_order_wins(self):
+        """LN3-T07: a show operation hit by several kinds reports the
+        first reason of the fixed order (render modes -> tiny ->
+        off-page -> layer -> transparent -> clipped -> white ->
+        same_color) and the hidden text never reaches the visible
+        side."""
+        obs = self._observe(
+            "order_alpha_color",
+            b"0.8 0.1 0.1 rg 50 650 400 60 re f "
+            + b"/GSa gs "
+            + _text_show("ghost blended.", color=b"0.8 0.1 0.1 rg ",
+                         y=680),
+            extgstates={"GSa": {"ca": 0.0}})
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (transparent)")
+        self.assertEqual(getattr(hidden[0], "how", None), "transparent")
+        self.assertNotIn("ghost blended.", visible_text(obs).text)
+
+        obs = self._observe(
+            "order_tiny_alpha",
+            b"/GSa gs " + _text_show("small ghost.", size=1.9, y=700),
+            extgstates={"GSa": {"ca": 0.0}})
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (tiny_font)")
+        self.assertEqual(getattr(hidden[0], "how", None), "tiny_font")
+        self.assertNotIn("small ghost.", visible_text(obs).text)
+
+    # --- LN3-T12 --------------------------------------------------------
+
+    def test_ln3t12_ascent_height_stays_in_the_band(self):
+        """LN3-T12: the text-box height derived from the font
+        descriptor's /Ascent stays in the band 0.5 to 1.0 of the font
+        size.  A small descriptor value cannot shrink the box of the
+        overflow line into its painted rectangle (the line stays
+        hidden), a large one cannot push the contained line out of its
+        rectangle (the line stays visible), and zero or negative
+        descriptor values keep the full-size height.  The in-band value
+        keeps the judgment unchanged."""
+        content = (
+            b"0.8 0.1 0.1 rg 40 600 360 28 re f "
+            + _text_show("White overflow.", color=_WHITE, size=20,
+                         x=60, y=620)
+            + b" 0.8 0.1 0.1 rg 40 660 360 48 re f "
+            + _text_show("White on band.", color=_WHITE, size=20,
+                         x=60, y=672)
+            + b" " + _text_show("Black body line.", color=_BLACK,
+                                size=20, x=60, y=580))
+        for name, ascent in (("one", 1), ("large", 2000), ("zero", 0),
+                             ("negative", -200), ("in band", 1000)):
+            with self.subTest(sample=name):
+                p = self._path("ascent_" + name)
+                _build_ln3_ascent(p, content, ascent)
+                obs = self.engine.observe(p)
+                vis = visible_text(obs).text
+                hidden = self._hidden(obs)
+                self.assertEqual([s.text for s in hidden],
+                                 ["White overflow."])
+                self.assertEqual([s.location for s in hidden],
+                                 ["page 1 (white_text)"])
+                self.assertNotIn("White overflow.", vis)
+                self.assertIn("White on band.", vis)
+                self.assertIn("Black body line.", vis)
+                self.assertEqual(obs.mask, "1001-000")
+                self.assertEqual(obs.diagnostics.get("white_on_painted"),
+                                 1)
+
+
+_RED = b"0.8 0.1 0.1 rg "
+
+
+def _build_ln3_full(path, content, *, extgstates=None, forms=None,
+                    image=False, shading=False, pattern=False,
+                    metadata=None):
+    """One-page PDF with the full 0.24.0 feature surface: /ExtGState
+    entries on the page, Form XObjects with their own /ExtGState, a
+    1x1 image, an axial shading, a tiling pattern in a /Pattern color
+    space, and file metadata.
+
+    forms maps /XName to (content, extgstates | None); each form is
+    drawn once after the page content.
+    """
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font_ref = writer._add_object(font)
+    resources = DictionaryObject({
+        NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): font_ref})})
+    if extgstates:
+        gs_res = DictionaryObject()
+        for name, spec in extgstates.items():
+            gs = DictionaryObject({
+                NameObject("/Type"): NameObject("/ExtGState")})
+            if "ca" in spec:
+                gs[NameObject("/ca")] = FloatObject(spec["ca"])
+            if "CA" in spec:
+                gs[NameObject("/CA")] = FloatObject(spec["CA"])
+            if "bm" in spec:
+                gs[NameObject("/BM")] = NameObject(spec["bm"])
+            if spec.get("smask"):
+                gs[NameObject("/SMask")] = _soft_mask(writer)
+            if spec.get("smask_none"):
+                gs[NameObject("/SMask")] = NameObject("/None")
+            gs_res[NameObject("/" + name.lstrip("/"))] = \
+                writer._add_object(gs)
+        resources[NameObject("/ExtGState")] = gs_res
+    if shading:
+        sh = DictionaryObject({
+            NameObject("/ShadingType"): NumberObject(2),
+            NameObject("/ColorSpace"): NameObject("/DeviceGray"),
+            NameObject("/Coords"): ArrayObject(
+                [FloatObject(0), FloatObject(0), FloatObject(612),
+                 FloatObject(792)]),
+            NameObject("/Extend"): ArrayObject(
+                [NameObject("/true"), NameObject("/true")])})
+        resources[NameObject("/Shading")] = DictionaryObject(
+            {NameObject("/Sh0"): writer._add_object(sh)})
+    if pattern:
+        tile = DecodedStreamObject()
+        tile.set_data(b"0.5 g 0 0 10 10 re f\n")
+        tile[NameObject("/Type")] = NameObject("/Pattern")
+        tile[NameObject("/PatternType")] = NumberObject(1)
+        tile[NameObject("/PaintType")] = NumberObject(1)
+        tile[NameObject("/TilingType")] = NumberObject(1)
+        tile[NameObject("/BBox")] = ArrayObject(
+            [FloatObject(0), FloatObject(0), FloatObject(10),
+             FloatObject(10)])
+        tile[NameObject("/XStep")] = NumberObject(10)
+        tile[NameObject("/YStep")] = NumberObject(10)
+        tile[NameObject("/Resources")] = DictionaryObject()
+        pat_space = ArrayObject([NameObject("/Pattern"),
+                                 NameObject("/DeviceRGB")])
+        resources[NameObject("/ColorSpace")] = DictionaryObject(
+            {NameObject("/PatCS"): pat_space})
+        resources[NameObject("/Pattern")] = DictionaryObject(
+            {NameObject("/Pat0"): writer._add_object(tile)})
+    if image:
+        img = DecodedStreamObject()
+        img.set_data(b"\x00")
+        img[NameObject("/Type")] = NameObject("/XObject")
+        img[NameObject("/Subtype")] = NameObject("/Image")
+        img[NameObject("/Width")] = NumberObject(1)
+        img[NameObject("/Height")] = NumberObject(1)
+        img[NameObject("/ColorSpace")] = NameObject("/DeviceGray")
+        img[NameObject("/BitsPerComponent")] = NumberObject(8)
+        xobjs = resources.get("/XObject") or DictionaryObject()
+        xobjs[NameObject("/Im0")] = writer._add_object(img)
+        resources[NameObject("/XObject")] = xobjs
+    draws = []
+    if forms:
+        xobjs = resources.get("/XObject") or DictionaryObject()
+        for name, (fcontent, fgs) in forms.items():
+            form = DecodedStreamObject()
+            form.set_data(fcontent)
+            form[NameObject("/Type")] = NameObject("/XObject")
+            form[NameObject("/Subtype")] = NameObject("/Form")
+            form[NameObject("/BBox")] = ArrayObject(
+                [FloatObject(0), FloatObject(0), FloatObject(612),
+                 FloatObject(792)])
+            fres = DictionaryObject({
+                NameObject("/Font"): DictionaryObject(
+                    {NameObject("/F1"): font_ref})})
+            if fgs:
+                fgs_res = DictionaryObject()
+                for gname, spec in fgs.items():
+                    g = DictionaryObject({
+                        NameObject("/Type"): NameObject("/ExtGState")})
+                    if "ca" in spec:
+                        g[NameObject("/ca")] = FloatObject(spec["ca"])
+                    if "CA" in spec:
+                        g[NameObject("/CA")] = FloatObject(spec["CA"])
+                    fgs_res[NameObject("/" + gname.lstrip("/"))] = \
+                        writer._add_object(g)
+                fres[NameObject("/ExtGState")] = fgs_res
+            form[NameObject("/Resources")] = fres
+            xobjs[NameObject(name)] = writer._add_object(form)
+        resources[NameObject("/XObject")] = xobjs
+        draws = [b"/" + name[1:].encode("ascii") + b" Do"
+                 for name in forms]
+    stream = DecodedStreamObject()
+    stream.set_data(b" ".join([content] + draws))
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    page[NameObject("/Resources")] = resources
+    if metadata:
+        writer.add_metadata(metadata)
+    with open(path, "wb") as f:
+        writer.write(f)
+
+
+@unittest.skipUnless(PYPDF_AVAILABLE, "pypdf not installed")
+class TestHiddenKindsLN3Full(unittest.TestCase):
+
+    def setUp(self):
+        self.engine = SieveLensEngine()
+        install(self.engine)
+        self._tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _path(self, name):
+        return Path(self._tmpdir.name) / (name + ".pdf")
+
+    def _observe(self, name, content, **kw):
+        p = self._path(name)
+        _build_ln3_full(p, content, **kw)
+        return self.engine.observe(p)
+
+    def _hidden(self, obs):
+        return [s for s in obs.segments if s.kind == "css_hidden"]
+
+    # --- LN3-T03 --------------------------------------------------------
+
+    def test_ln3t03_every_author_label_site_rides_the_cleaning(self):
+        """LN3-T03: every location-building site that carries
+        PDF-authored text - the metadata keys, the form names and the
+        layer names - passes the one cleaning function; nothing rides
+        in raw."""
+        engine = SieveLensEngine()
+        install(engine)
+        extractor = engine.get_extractor(".pdf")
+        calls = []
+        original = extractor._clean_label_text
+
+        def recorded(text):
+            calls.append(text)
+            return original(text)
+
+        extractor._clean_label_text = recorded
+        try:
+            writer = PdfWriter()
+            page = writer.add_blank_page(width=612, height=792)
+            font = DictionaryObject({
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica")})
+            font_ref = writer._add_object(font)
+            ocg_ref = writer._add_object(DictionaryObject({
+                NameObject("/Type"): NameObject("/OCG"),
+                NameObject("/Name"): TextStringObject("Layer One")}))
+            form = DecodedStreamObject()
+            form.set_data(b"BT /F1 12 Tf 10 100 Td 3 Tr (in form.) Tj ET")
+            form[NameObject("/Type")] = NameObject("/XObject")
+            form[NameObject("/Subtype")] = NameObject("/Form")
+            form[NameObject("/BBox")] = ArrayObject(
+                [FloatObject(0), FloatObject(0), FloatObject(612),
+                 FloatObject(792)])
+            form[NameObject("/Resources")] = DictionaryObject({
+                NameObject("/Font"): DictionaryObject(
+                    {NameObject("/F1"): font_ref})})
+            form_ref = writer._add_object(form)
+            page[NameObject("/Resources")] = DictionaryObject({
+                NameObject("/Font"): DictionaryObject(
+                    {NameObject("/F1"): font_ref}),
+                NameObject("/Properties"): DictionaryObject(
+                    {NameObject("/Pr0"): ocg_ref}),
+                NameObject("/XObject"): DictionaryObject(
+                    {NameObject("/Fm0"): form_ref})})
+            writer._root_object[NameObject("/OCProperties")] = (
+                DictionaryObject({
+                    NameObject("/D"): DictionaryObject({
+                        NameObject("/OFF"): ArrayObject([ocg_ref])}),
+                    NameObject("/OCGs"): ArrayObject([ocg_ref])}))
+            stream = DecodedStreamObject()
+            stream.set_data(
+                b"/MC0 /Pr0 BDC BT /F1 12 Tf 50 700 Td (layered.) Tj ET "
+                b"EMC /Fm0 Do")
+            page[NameObject("/Contents")] = writer._add_object(stream)
+            writer.add_metadata({"/Title": "Sample title for T03."})
+            p = self._path("coverage")
+            with open(p, "wb") as f:
+                writer.write(f)
+            obs = engine.observe(p)
+        finally:
+            extractor._clean_label_text = original
+        self.assertIn("/Title", calls)          # the metadata key
+        self.assertIn("/Fm0", calls)            # the form resource name
+        self.assertIn("Layer One", calls)       # the layer name
+        locations = [s.location for s in obs.segments]
+        self.assertIn("PDF metadata / /Title", locations)
+        self.assertIn("page 1 (form '/Fm0', invisible text, Tr 3)",
+                      locations)
+        self.assertIn("page 1 (off_layer 'Layer One')", locations)
+
+    # --- LN3-T04 --------------------------------------------------------
+
+    def test_ln3t04_modes_both_lanes_and_fail_closed(self):
+        """LN3-T04: the both-color lanes (2 and 6) hide only when BOTH
+        sides are at or below the threshold; a gs whose name the
+        /ExtGState dictionary does not carry fails the page closed."""
+        obs = self._observe(
+            "both_lanes",
+            b"/GSa gs " + _text_show("fill ghost stroke live.", mode=2,
+                                     y=700) + b" "
+            + b"/GSb gs " + _text_show("both ghost.", mode=2, y=680),
+            extgstates={"GSa": {"ca": 0.0, "CA": 1.0},
+                        "GSb": {"ca": 0.0, "CA": 0.0}})
+        vis = visible_text(obs).text
+        self.assertIn("fill ghost stroke live.", vis)
+        self.assertNotIn("both ghost.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (transparent)")
+        self.assertEqual(getattr(hidden[0], "how", None), "transparent")
+
+        obs = self._observe(
+            "gs_missing",
+            b"/GSmissing gs " + _text_show("never classified.", y=700))
+        page1 = [s for s in obs.segments if s.kind == "body"]
+        self.assertEqual(page1[0].location,
+                         "page 1 (Extraction failed)")
+        self.assertNotIn("never classified.", visible_text(obs).text)
+
+    def test_ln3t04_smask_none_and_bm_normal_clear_the_annotation(self):
+        """LN3-T04: /SMask /None and /BM /Normal clear the annotation -
+        the text above the threshold becomes judgeable again."""
+        obs = self._observe(
+            "clear_flags",
+            b"/GSa gs " + _text_show("under mask.", y=700) + b" "
+            + b"/GSb gs " + _text_show("mask cleared.", y=680) + b" "
+            + b"/GSc gs " + _text_show("blend cleared.", y=660),
+            extgstates={"GSa": {"ca": 0.5, "smask": True},
+                        "GSb": {"ca": 0.5, "smask_none": True},
+                        "GSc": {"ca": 0.5, "bm": "/Normal"}})
+        vis = visible_text(obs).text
+        self.assertIn("under mask.", vis)
+        self.assertIn("mask cleared.", vis)
+        self.assertIn("blend cleared.", vis)
+        self.assertEqual(obs.diagnostics.get("alpha_unresolved"), 1)
+
+    def test_ln3t04_form_inherits_the_invocation_alpha(self):
+        """LN3-T04: a form drawn under a gs inherits the invocation
+        opacity for its own text."""
+        obs = self._observe(
+            "form_alpha",
+            b"/GSa gs",
+            forms={"/Fm0": (_text_show("form ghost.", y=100),
+                            None)},
+            extgstates={"GSa": {"ca": 0.0}})
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location,
+                         "page 1 (form '/Fm0', transparent)")
+        self.assertEqual(getattr(hidden[0], "how", None), "transparent")
+        self.assertEqual(getattr(hidden[0], "page", None), 1)
+        self.assertNotIn("form ghost.", visible_text(obs).text)
+
+    def test_ln3t04_form_own_extgstate_applies(self):
+        """LN3-T04: a gs inside the form's own stream resolves through
+        the form's own /ExtGState resources."""
+        obs = self._observe(
+            "form_gs",
+            b"",
+            forms={"/Fm0": (b"/FmGS gs "
+                            + _text_show("form own ghost.", y=100),
+                            {"FmGS": {"ca": 0.0}})})
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location,
+                         "page 1 (form '/Fm0', transparent)")
+        self.assertNotIn("form own ghost.", visible_text(obs).text)
+
+    # --- LN3-T05 --------------------------------------------------------
+
+    def test_ln3t05_clips_intersect_and_q_q_restores(self):
+        """LN3-T05: two clip rectangles intersect; q/Q restores the
+        region before the clips."""
+        obs = self._observe(
+            "clip_intersect",
+            b"q 50 650 400 60 re W n 100 660 100 20 re W n "
+            + _text_show("in both.", y=662) + b" "
+            + _text_show("in one only.", y=655, x=300) + b" Q "
+            + _text_show("after restore.", y=500))
+        vis = visible_text(obs).text
+        self.assertIn("in both.", vis)
+        self.assertNotIn("in one only.", vis)
+        self.assertIn("after restore.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual([(s.location, s.text) for s in hidden],
+                         [("page 1 (clipped)", "in one only.")])
+
+    def test_ln3t05_form_bbox_is_the_invocation_clip(self):
+        """LN3-T05: a form's /BBox narrows the invocation clip - text
+        the form draws outside its own box is clipped away."""
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=612, height=792)
+        font = DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica")})
+        font_ref = writer._add_object(font)
+        form = DecodedStreamObject()
+        form.set_data(b"BT /F1 12 Tf 10 100 Td (inside box.) Tj ET "
+                      b"BT /F1 12 Tf 10 40 Td (outside box.) Tj ET")
+        form[NameObject("/Type")] = NameObject("/XObject")
+        form[NameObject("/Subtype")] = NameObject("/Form")
+        form[NameObject("/BBox")] = ArrayObject(
+            [FloatObject(0), FloatObject(80),
+             FloatObject(612), FloatObject(792)])
+        form[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/Font"): DictionaryObject(
+                {NameObject("/F1"): font_ref})})
+        form_ref = writer._add_object(form)
+        page[NameObject("/Resources")] = DictionaryObject({
+            NameObject("/Font"): DictionaryObject(
+                {NameObject("/F1"): font_ref}),
+            NameObject("/XObject"): DictionaryObject(
+                {NameObject("/Fm0"): form_ref})})
+        stream = DecodedStreamObject()
+        stream.set_data(b"/Fm0 Do")
+        page[NameObject("/Contents")] = writer._add_object(stream)
+        p = self._path("form_bbox")
+        with open(p, "wb") as f:
+            writer.write(f)
+        obs = self.engine.observe(p)
+        vis = visible_text(obs).text
+        self.assertIn("inside box.", vis)
+        self.assertNotIn("outside box.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual([(s.location, s.text) for s in hidden],
+                         [("page 1 (form '/Fm0', clipped)",
+                           "outside box.")])
+        self.assertEqual(getattr(hidden[0], "how", None), "clipped")
+
+    def test_ln3t05_undecidable_clip_shapes_stay_visible(self):
+        """LN3-T05: a diagonal or a curved clip is not judgeable - the
+        text stays visible and the clip_unresolved counter moves."""
+        obs = self._observe(
+            "clip_diagonal",
+            b"50 650 m 450 710 l W n "
+            + _text_show("diagonal clip.", y=700))
+        self.assertIn("diagonal clip.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+        self.assertEqual(obs.diagnostics.get("clip_unresolved"), 1)
+
+        obs = self._observe(
+            "clip_curve",
+            b"50 650 m 100 650 200 700 250 680 c h W n "
+            + _text_show("curved clip.", y=700))
+        self.assertIn("curved clip.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+        self.assertEqual(obs.diagnostics.get("clip_unresolved"), 1)
+
+    def test_ln3t05_ninety_degree_rotation_stays_judgeable(self):
+        """LN3-T05: a clip drawn under a 90-degree rotation is judged
+        on the CTM-transformed points - the transformed corners are
+        the (x, y) combinations of two x values and two y values, so
+        the rectangle survives the rotation."""
+        obs = self._observe(
+            "clip_rotated",
+            b"q 0 1 -1 0 792 0 cm 50 0 400 300 re W n "
+            + _text_show("inside rotated.", x=0, y=200) + b" "
+            + _text_show("outside rotated.", x=0, y=500) + b" Q "
+            + _text_show("after restore.", x=50, y=500))
+        vis = visible_text(obs).text
+        self.assertIn("inside rotated.", vis)
+        self.assertNotIn("outside rotated.", vis)
+        self.assertIn("after restore.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual([(s.location, s.text) for s in hidden],
+                         [("page 1 (clipped)", "outside rotated.")])
+        self.assertNotIn("clip_unresolved", obs.diagnostics)
+
+    # --- LN3-T06 --------------------------------------------------------
+
+    def test_ln3t06_same_color_families_and_boundary(self):
+        """LN3-T06: the same-color judgment covers Gray, RGB and CMYK
+        (Gray converts to (g, g, g)); the boundary is 0.02 per
+        component; a family mismatch stays visible with the existing
+        color_unresolved counter."""
+        cases = [
+            ("gray", b"0.2 g 50 640 400 60 re f ",
+             b"0.2 g ", "gray ghost."),
+            ("rgb", b"0.1 0.2 0.3 rg 50 640 400 60 re f ",
+             b"0.1 0.2 0.3 rg ", "rgb ghost."),
+            ("cmyk", b"0.1 0.2 0.3 0.4 k 50 640 400 60 re f ",
+             b"0.1 0.2 0.3 0.4 k ", "cmyk ghost."),
+            ("gray_as_rgb", b"0.2 g 50 640 400 60 re f ",
+             b"0.2 0.2 0.2 rg ", "converted ghost."),
+            ("boundary", b"0 g 50 640 400 60 re f ",
+             b"0.02 g ", "boundary ghost."),
+        ]
+        for name, rect, color, text in cases:
+            with self.subTest(sample=name):
+                obs = self._observe(
+                    "sc_" + name,
+                    rect + _text_show(text, color=color, y=660))
+                hidden = self._hidden(obs)
+                self.assertEqual(len(hidden), 1)
+                self.assertEqual(hidden[0].location,
+                                 "page 1 (same_color)")
+                self.assertEqual(hidden[0].text, text)
+                self.assertNotIn(text, visible_text(obs).text)
+
+        obs = self._observe(
+            "sc_above",
+            b"0 g 50 640 400 60 re f "
+            + _text_show("above boundary.", color=b"0.03 g ",
+                         y=660))
+        self.assertIn("above boundary.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+        obs = self._observe(
+            "sc_family",
+            b"0.2 g 50 640 400 60 re f "
+            + _text_show("other family.", color=b"0.1 0.2 0.3 0.4 k ",
+                         y=660))
+        self.assertIn("other family.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+        self.assertEqual(obs.diagnostics.get("color_unresolved"), 1)
+
+    def test_ln3t06_a_later_paint_cancels_the_judgment(self):
+        """LN3-T06: a second fill drawn over the background and
+        overlapping the text's range means the background is not one
+        solid color - the text stays visible."""
+        obs = self._observe(
+            "sc_cancel_fill",
+            b"0.8 0.1 0.1 rg 50 640 400 60 re f "
+            b"0.1 0.1 0.8 rg 60 650 80 40 re f "
+            + _text_show("over two paints.", color=b"0.8 0.1 0.1 rg ",
+                         y=660))
+        self.assertIn("over two paints.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+    def test_ln3t06_image_shading_and_pattern_cancel_too(self):
+        """LN3-T06: an image, a shading and a pattern fill over the
+        background cancel the same-color judgment as well (the
+        color-unknown backgrounds); none of them becomes the
+        background of a white text."""
+        obs = self._observe(
+            "sc_cancel_image",
+            b"0.8 0.1 0.1 rg 50 640 400 60 re f "
+            b"q 100 0 0 40 100 650 cm /Im0 Do Q "
+            + _text_show("over image.", color=b"0.8 0.1 0.1 rg ",
+                         y=660),
+            image=True)
+        self.assertIn("over image.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+        obs = self._observe(
+            "sc_cancel_sh",
+            b"0.8 0.1 0.1 rg 50 640 400 60 re f "
+            b"/Sh0 sh "
+            + _text_show("over shading.", color=b"0.8 0.1 0.1 rg ",
+                         y=660),
+            shading=True)
+        self.assertIn("over shading.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+        obs = self._observe(
+            "sc_cancel_pattern",
+            b"0.8 0.1 0.1 rg 50 640 400 60 re f "
+            b"/PatCS cs /Pat0 scn 60 650 80 40 re f "
+            + _text_show("over pattern.", color=b"0.8 0.1 0.1 rg ",
+                         y=660),
+            pattern=True)
+        self.assertIn("over pattern.", visible_text(obs).text)
+        self.assertEqual(self._hidden(obs), [])
+
+    def test_ln3t06_shading_is_not_a_white_text_background(self):
+        """LN3-T06 (the measured-correction boundary): a shading alone
+        does not make white text visible - the white-text background
+        admission is a measured, evidenced change, not this release's
+        default.  A shading over the background does not hide the text
+        either (it cancels; it never judges)."""
+        obs = self._observe(
+            "sh_white",
+            b"/Sh0 sh "
+            + _text_show("white over shading.", color=_WHITE, y=700),
+            shading=True)
+        vis = visible_text(obs).text
+        self.assertNotIn("white over shading.", vis)
+        hidden = self._hidden(obs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(hidden[0].location, "page 1 (white_text)")
+        self.assertNotIn("white_on_painted", obs.diagnostics)
+
+    # --- LN3-T08 --------------------------------------------------------
+
+    def test_ln3t08_existing_samples_gain_no_new_keys(self):
+        """LN3-T08: the pre-0.24 samples keep their observation shape -
+        the new diagnostic keys exist only when their count is greater
+        than zero, and no segment serialization gains a key (the kind
+        fields exist only on the hidden PDF segments)."""
+        from sieve_lens_ext.html_css import install as install_html
+
+        engine = SieveLensEngine()
+        install(engine)
+        install_html(engine)
+        samples = [
+            ("mode3", _text_show("Visible line.", y=700) + b" "
+                      + _text_show("Ghost memo.", mode=3, y=680), {}),
+            ("tiny", _text_show("small print.", size=1.9, y=700), {}),
+            ("slide_painted", _RED + b"50 650 400 60 re f "
+                              + _text_show("White banner.", color=_WHITE,
+                                           y=680), {}),
+            ("slide_unpainted", _text_show("White banner.", color=_WHITE,
+                                           y=700), {}),
+            ("form_tr3", b"", {}),
+        ]
+        forms = {"/Fm0": (_text_show("form ghost.", mode=3, y=100), None)}
+        for name, content, kw in samples:
+            with self.subTest(sample=name):
+                obs = self._observe("inv_" + name, content,
+                                    forms=forms, **kw)
+                self.assertNotIn("alpha_unresolved", obs.diagnostics)
+                self.assertNotIn("clip_unresolved", obs.diagnostics)
+                for seg in obs.segments:
+                    self.assertEqual(set(dataclasses.asdict(seg)),
+                                     {"text", "visible", "kind",
+                                      "location"})
+                    if seg.kind == "css_hidden":
+                        self.assertIn("how", vars(seg))
+                        self.assertIn("page", vars(seg))
+                    else:
+                        self.assertNotIn("how", vars(seg))
+                        self.assertNotIn("page", vars(seg))
+                # the HTML lane is unchanged as well
+                p = Path(self._tmpdir.name) / "lane.html"
+                p.write_text("<p>plain html.</p>", encoding="utf-8")
+                obs_html = engine.observe(p)
+                for seg in obs_html.segments:
+                    self.assertEqual(set(dataclasses.asdict(seg)),
+                                     {"text", "visible", "kind",
+                                      "location"})
+
+    # --- LN3-T09 --------------------------------------------------------
+
+    def test_ln3t09_the_vocabulary_is_fixed(self):
+        """LN3-T09: PDF_HIDDEN_HOWS is the closed nine-word vocabulary
+        with the three new words; the existing vocabularies are
+        unchanged."""
+        from sieve_lens import (CONCEALMENT_REASONS, REFUSAL_CODES,
+                                STRIP_KINDS)
+        from sieve_lens_ext.pdf import PDF_HIDDEN_HOWS
+
+        self.assertEqual(
+            PDF_HIDDEN_HOWS,
+            ("tr3", "tr7", "tiny_font", "off_page", "off_layer",
+             "white_text", "transparent", "clipped", "same_color"))
+        self.assertEqual(len(PDF_HIDDEN_HOWS), 9)
+        for word in ("transparent", "clipped", "same_color"):
+            self.assertIn(word, PDF_HIDDEN_HOWS)
+        self.assertEqual(len(CONCEALMENT_REASONS), 4)
+        self.assertEqual(len(REFUSAL_CODES), 13)
+        self.assertEqual(len(STRIP_KINDS), 5)
+
+    # --- LN3-T11 --------------------------------------------------------
+
+    def test_ln3t11_the_state_machine_keeps_its_rules(self):
+        """LN3-T11: the alpha and the clip ride the same snapshot rules
+        - a form re-invoked under a different opacity or a different
+        clip fails the page closed; the render-mode, color and CTM
+        tracking is untouched (the 0.23 suite runs unmodified)."""
+        obs = self._observe(
+            "reinvoke_alpha",
+            b"/Fm0 Do /GSa gs",
+            forms={"/Fm0": (_text_show("form ghost.", mode=3, y=100),
+                            None)},
+            extgstates={"GSa": {"ca": 0.0}})
+        page1 = [s for s in obs.segments if s.kind == "body"]
+        self.assertEqual(page1[0].location,
+                         "page 1 (Extraction failed)")
+
+        obs = self._observe(
+            "reinvoke_clip",
+            b"50 650 400 60 re W n /Fm0 Do 100 100 0 50 re W n",
+            forms={"/Fm0": (_text_show("form ghost.", mode=3, y=100),
+                            None)})
+        page1 = [s for s in obs.segments if s.kind == "body"]
+        self.assertEqual(page1[0].location,
+                         "page 1 (Extraction failed)")
+
+        # the clip state rides q/Q exactly like the colors do
+        obs = self._observe(
+            "clip_qq",
+            b"q 50 650 400 60 re W n "
+            + _text_show("inside clip.", y=680) + b" Q "
+            + _text_show("after clip restore.", y=500))
+        vis = visible_text(obs).text
+        self.assertIn("inside clip.", vis)
+        self.assertIn("after clip restore.", vis)
+        self.assertEqual(self._hidden(obs), [])
+
+
+    # --- LN3-T10 --------------------------------------------------------
+
+    _FIXTURES = _ROOT / "tests" / "fixtures"
+
+    def _observe_fixture(self, name):
+        obs = self.engine.observe(self._FIXTURES / name)
+        return obs, [s for s in obs.segments if s.kind == "css_hidden"]
+
+    def test_ln3t10_real_exports_report_no_false_detections(self):
+        """LN3-T10: the LibreOffice Impress and Writer exports keep
+        their white text visible - the shaded paragraph, the table
+        cells, the colored band, the shape label, the gradient and
+        image backgrounds, the table header row and the footer bands
+        all ride the slide-style guard (white_on_painted); the two
+        white texts that genuinely run wider than their shapes are the
+        only hidden reports, and no text that renders visible on the
+        real pages is missed the other way."""
+        obs, hidden = self._observe_fixture("doc.pdf")
+        self.assertEqual(hidden, [])
+        self.assertEqual(obs.mask, "1000-100")
+        self.assertEqual(obs.diagnostics.get("white_on_painted"), 3)
+        self.assertNotIn("alpha_unresolved", obs.diagnostics)
+        self.assertNotIn("clip_unresolved", obs.diagnostics)
+        vis = visible_text(obs).text
+        self.assertIn("shaded paragraph", vis)
+        self.assertIn("Cell white one", vis)
+        self.assertIn("Cell white two", vis)
+        self.assertIn("Document header line", vis)
+        self.assertIn("Document footer line", vis)
+        meta = [s for s in obs.segments if s.kind == "metadata"]
+        self.assertTrue(meta)
+        self.assertIn("LibreOffice", meta[0].text)
+
+        obs, hidden = self._observe_fixture("slides.pdf")
+        self.assertEqual([s.location for s in hidden],
+                         ["page 2 (white_text)", "page 5 (white_text)"])
+        self.assertEqual(obs.mask, "1001-100")
+        self.assertEqual(obs.diagnostics.get("white_on_painted"), 6)
+        self.assertNotIn("alpha_unresolved", obs.diagnostics)
+        self.assertNotIn("clip_unresolved", obs.diagnostics)
+        vis = visible_text(obs).text
+        # the dark, gradient and image background titles stay visible
+        self.assertIn("White title on the dark background", vis)
+        self.assertIn("White title on the gradient background", vis)
+        self.assertIn("White title on the image background", vis)
+        self.assertIn("White text on the colored band", vis)
+        self.assertIn("Footer band of the slide", vis)
+        # the table header row rides the slide-style guard too (the
+        # cell paint beneath it); pypdf's own extraction does not
+        # surface the table texts, so their judgment is pinned through
+        # the counter rather than the visible text
+        # the two reported white texts are the shape-overflow pair;
+        # their visible-side exclusion matches the render (the part
+        # outside the shape paints white on white)
+        self.assertNotIn("White label on the colored shape", vis)
+        self.assertNotIn("White text that runs wider than its shape "
+                         "box", vis)
+
+    def test_ln3t10_injected_hidden_kinds_are_all_reported(self):
+        """LN3-T10: the injected page (an export page set plus one
+        hand-built page, kept apart from the export-origin pages) has
+        one text of each intentional kind and every one of them is
+        reported - no misses - with the kind word and the page number
+        on each segment; the in-clip and the plain lines stay
+        visible."""
+        for name, injected_page in (("doc-injected.pdf", 2),
+                                    ("slides-injected.pdf", 7)):
+            with self.subTest(sample=name):
+                obs, hidden = self._observe_fixture(name)
+                page = [s for s in hidden
+                        if getattr(s, "page", None) == injected_page]
+                kinds = sorted(getattr(s, "how", None) for s in page)
+                self.assertEqual(
+                    kinds,
+                    ["clipped", "same_color", "tiny_font", "tr3",
+                     "transparent", "white_text"])
+                joined = "".join(s.text for s in page)
+                for fragment in ("Injected Tr3 memo.",
+                                 "Injected transparent.",
+                                 "Injected clipped out.",
+                                 "Injected same color.",
+                                 "Injected white.", "Injected tiny."):
+                    self.assertIn(fragment, joined)
+                vis = visible_text(obs).text
+                for fragment in ("Injected visible line.",
+                                 "Injected clipped in.",
+                                 "Injected end black."):
+                    self.assertIn(fragment, vis)
+                # the export-origin pages keep their own counts
+                if name == "doc-injected.pdf":
+                    export_hidden = [s for s in hidden
+                                     if getattr(s, "page", None) == 1]
+                    self.assertEqual(export_hidden, [])
+                else:
+                    export_hidden = [s for s in hidden
+                                     if getattr(s, "page", None)
+                                     in (1, 2, 3, 4, 5, 6)]
+                    self.assertEqual([s.location for s in export_hidden],
+                                     ["page 2 (white_text)",
+                                      "page 5 (white_text)"])
 
 
 if __name__ == "__main__":

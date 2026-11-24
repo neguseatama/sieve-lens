@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.24.0] - 2026-11-24
+
+### Added
+- PDF hidden text widens to three further kinds: invisible ink
+  (drawing opacity at or below 0.02 - hidden even under a soft mask or
+  a blend mode; above the threshold either one keeps the text visible
+  and counted), text clipped away by a rectangle clip (an undecidable
+  clip shape stays visible and counted), and text drawn in its own
+  background color (within 0.02 per component; an image, a shading or
+  a pattern fill over the background cancels the judgment).  The new
+  diagnostic counters appear only when their count is greater than
+  zero.
+- Hidden PDF segments carry the kind word (a closed nine-word
+  vocabulary) and the page number; both exist only when a value
+  exists, so no existing observation shape changes and the location
+  wording is unchanged.
+- The fill+stroke even-odd operators `B*` and `b*` join the paint
+  list and guard white text like the other fills.
+
+### Changed
+- The label cleaning now covers the form names and the metadata keys
+  (printable characters only, whitespace runs collapsed, capped at 40
+  characters); ordinary names are unchanged.
+- The text bounding box height uses the font's own `/Ascent` when the
+  descriptor carries one, clamped to the 0.5 to 1.0 band of the font
+  size (a descriptor value outside the band does not move the box);
+  fonts without one keep the previous height.
+
 ## [0.23.0] - 2026-11-20
 
 ### Added

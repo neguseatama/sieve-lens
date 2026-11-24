@@ -54,6 +54,38 @@ v0.23.0 - the shared state machine widens from the render mode to the
   (keys appear only when the count is greater than zero, so the 0.22.1
   samples' diagnostics stay unchanged).
 
+v0.24.0 - the drawing state widens again and the kinds follow: the
+  fill and stroke opacities with their soft-mask and blend-mode
+  annotations (gs through /ExtGState; q/Q save and restore them; a
+  form inherits them at its invocation; an unresolvable or unreadable
+  /ExtGState fails closed), the clip region (W / W* before n; the
+  shape judgment runs once, on the CTM-transformed points, so a clip
+  drawn under a 90-degree rotation stays a rectangle; several clips
+  intersect; a form's /BBox narrows the clip at its invocation), and
+  the paint history carries each fill's color.  Three kinds join the
+  five: transparent (the drawing opacity at or below 0.02 - the
+  threshold judgment comes first, so a soft mask or a non-normal blend
+  mode only defers an opacity ABOVE the threshold to visible with the
+  alpha_unresolved counter), clipped (the text's box never intersects
+  the clip rectangle; an empty clip hides everything; an undecidable
+  shape stays visible with the clip_unresolved counter), and
+  same_color (one non-white fill contains the text's box, no later
+  paint overlaps it, and the color matches within 0.02; an image, a
+  shading or a pattern fill over the background cancels the judgment -
+  the visible-leaning direction - and never becomes the background of
+  the white-text guard in this release).  The paint-op list widens by
+  the two missing fill+stroke even-odd forms B* and b*.  The text box
+  height uses the font's own /Ascent when the descriptor carries one
+  (fonts without one keep the 0.23 full-size height).
+
+  Every hidden PDF segment also carries the structured kind word (the
+  closed nine-word vocabulary PDF_HIDDEN_HOWS) and the 1-based page
+  number as attributes that exist only when a value exists, so no
+  serialization of an existing sample, of the other lanes, or of a
+  visible segment changes shape.  The location label cleaning widens
+  to the form names and the metadata keys; the fixed reason order
+  gains the two new stages between the layer and the white kinds.
+
 Note on text extraction:
   pypdf's page.extract_text() maps characters through the font's encoding
   (e.g. WinAnsi for Helvetica), which drops characters not present in that
@@ -153,8 +185,10 @@ WIDTH_FALLBACK_FACTOR = 1.0
 LAYER_LABEL_MAX_CHARS = 40
 
 # The paint operators whose fill counts as a background (design request
-# 3.1-5, literal list: f / F / f* / B / b) plus the image Do.
-PAINT_FILL_OPS = (b"f", b"F", b"f*", b"B", b"b")
+# 3.1-5, literal list: f / F / f* / B / b, widened by the paint-op
+# review to the two missing fill+stroke even-odd forms B* / b*) plus
+# the image Do.
+PAINT_FILL_OPS = (b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*")
 
 # The state operators the shared state machine applies.
 _STATE_OPS = (b"Tr", b"q", b"Q", b"cm", b"BT", b"Tm", b"Td", b"TD",
@@ -169,6 +203,39 @@ _PATH_END_OPS = (b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*", b"S",
                  b"s", b"n")
 
 _DEVICE_SPACES = ("/DeviceGray", "/DeviceRGB", "/DeviceCMYK")
+
+# The closed vocabulary of the hidden-kind words: the structured `how`
+# field of a hidden PDF segment (documented in docs/ARCHITECTURE.md).
+# The location label keeps the 0.23 wording; this field is the
+# machine-readable side of the same judgment.
+PDF_HIDDEN_HOWS = ("tr3", "tr7", "tiny_font", "off_page", "off_layer",
+                   "white_text", "transparent", "clipped", "same_color")
+
+# The two render-mode kinds keep their internal reason words (the
+# location label and the existing classification predate the
+# structured field); the field carries the vocabulary word.
+_HOW_OF_REASON = {"mode3": "tr3", "mode7": "tr7"}
+
+# LN3 (the new kinds' thresholds, documented in docs/ARCHITECTURE.md):
+# an opacity at or below ALPHA_MAX_HIDDEN hides the text; a text color
+# within SAME_COLOR_MAX_DELTA of its background's color (per component)
+# is the same_color kind.
+ALPHA_MAX_HIDDEN = 0.02
+SAME_COLOR_MAX_DELTA = 0.02
+
+# The text-box height derived from the font descriptor's /Ascent is
+# clamped to this band of the font size.  The descriptor value is
+# PDF-authored, so a small one cannot shrink the box into a painted
+# background and a large one cannot push the box out of it; fonts
+# without a descriptor keep the full size.  Documented in
+# docs/ARCHITECTURE.md.
+ASCENT_HEIGHT_MIN = 0.5
+ASCENT_HEIGHT_MAX = 1.0
+
+# The blend modes that compose the text unchanged; every other /BM
+# leaves the drawing result undecidable (the soft-mask and blend-mode
+# deferral only fires ABOVE the alpha threshold).
+_BM_TRANSPARENT_MODES = ("/Normal", "/Compatible")
 
 _THE_MISSING = object()
 
@@ -218,6 +285,66 @@ def _matrix_operand(operands):
     if len(values) != 6:
         return None
     return tuple(values)
+
+
+def _color_delta(kind_a, value_a, kind_b, value_b):
+    """The maximum per-component difference of two colors of the same
+    family: Gray and RGB compare in the (g, g, g) conversion, CMYK
+    compares against CMYK only.  None when the families differ or a
+    value is missing (the color is then unresolved, never hidden)."""
+    if kind_a == "gray" and kind_b == "gray":
+        return abs(value_a - value_b)
+    if kind_a == "gray" and kind_b == "rgb":
+        value_a = (value_a,) * 3
+        kind_a = "rgb"
+    elif kind_a == "rgb" and kind_b == "gray":
+        value_b = (value_b,) * 3
+        kind_b = "rgb"
+    if kind_a == kind_b and kind_a in ("rgb", "cmyk") \
+            and value_a is not None and value_b is not None:
+        return max(abs(x - y) for x, y in zip(value_a, value_b))
+    return None
+
+
+def _axis_aligned_rect(points):
+    """The shape judgment of one clip path, made once, on the
+    CTM-transformed points: four points that are the (x, y)
+    combinations of at most two x values and at most two y values.
+    Two values on both axes give the rectangle; a degenerate axis
+    (one value) gives the empty region.  Everything else - diagonals,
+    curves (the control points ride the list), arbitrary polygons -
+    is None (undecidable)."""
+    if len(points) != 4:
+        return None
+    xs = sorted({p[0] for p in points})
+    ys = sorted({p[1] for p in points})
+    if len(xs) > 2 or len(ys) > 2:
+        return None
+    if set(points) != {(x, y) for x in xs for y in ys}:
+        return None
+    if len(xs) == 2 and len(ys) == 2:
+        return ("rect", (xs[0], ys[0], xs[1], ys[1]))
+    return "empty"
+
+
+def _clip_intersect(a, b):
+    """The intersection of two clip states.  None is the unclipped
+    page; an unknown (unresolved) region can never be narrowed."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    if a == "empty" or b == "empty":
+        return "empty"
+    if a == "unresolved" or b == "unresolved":
+        return "unresolved"
+    (ax0, ay0, ax1, ay1) = a[1]
+    (bx0, by0, bx1, by1) = b[1]
+    nx0, ny0 = max(ax0, bx0), max(ay0, by0)
+    nx1, ny1 = min(ax1, bx1), min(ay1, by1)
+    if nx0 >= nx1 or ny0 >= ny1:
+        return "empty"
+    return ("rect", (nx0, ny0, nx1, ny1))
 
 
 class _PdfSegments(list):
@@ -270,7 +397,8 @@ class PdfExtractor:
                 "Install with: pip install sieve-lens[pdf]"
             )
         segments = _PdfSegments()
-        counters = {"color_unresolved": 0, "white_on_painted": 0}
+        counters = {"color_unresolved": 0, "white_on_painted": 0,
+                    "alpha_unresolved": 0, "clip_unresolved": 0}
         with open(path, "rb") as f:
             reader = PdfReader(f)
             segments.extend(self._extract_metadata(reader))
@@ -301,7 +429,8 @@ class PdfExtractor:
                     text=val,
                     visible=False,
                     kind="metadata",
-                    location=f"PDF metadata / {key}",
+                    location=(f"PDF metadata / "
+                              f"{self._clean_label_text(key)}"),
                 ))
         return segments
 
@@ -595,11 +724,12 @@ class PdfExtractor:
     def _classify_show(self, state, texts, resources, cls, box, paints):
         """The one judgment for one show operation.
 
-        Returns (reason, label) for the fixed reason order of the
-        design request: render mode 3, render mode 7, tiny_font,
-        off_page, off_layer, white_text.  (None, None) when the text is
-        visible.  Raises _StateError when the optional-content context
-        cannot be evaluated (fail closed).
+        Returns (reason, label) for the fixed reason order: render
+        mode 3, render mode 7, tiny_font, off_page, off_layer,
+        transparent, clipped, white_text, same_color.  (None, None)
+        when the text is visible.  Raises _StateError when the
+        optional-content context or an /ExtGState reference cannot be
+        evaluated (fail closed).
         """
         if state.mode == 3:
             return "mode3", "invisible text, Tr 3"
@@ -624,6 +754,37 @@ class PdfExtractor:
                 continue
             if self._oc_item_off(item, cls.oc_cfg):
                 return "off_layer", self._layer_label(item, key)
+        # transparent: the threshold judgment comes first - at or
+        # below the threshold the text draws nothing, whatever a soft
+        # mask or a blend mode would compose on top of it.  Only an
+        # opacity above the threshold with a soft mask or a non-normal
+        # blend mode in effect stays undecidable (visible, counted).
+        if state.mode in (0, 4):
+            alphas = (state.alpha_fill,)
+        elif state.mode in (1, 5):
+            alphas = (state.alpha_stroke,)
+        else:
+            alphas = (state.alpha_fill, state.alpha_stroke)
+        if all(a <= ALPHA_MAX_HIDDEN for a in alphas):
+            return "transparent", "transparent"
+        if state.smask or state.bm:
+            cls.alpha_unresolved += 1
+            return None, None
+        # clipped: the text's range against the current clip region
+        # (the empty region hides everything; an undecidable region
+        # stays visible and is counted)
+        if state.clip is not None:
+            if state.clip == "empty":
+                return "clipped", "clipped"
+            if state.clip == "unresolved":
+                cls.clip_unresolved += 1
+                return None, None
+            cx0, cy0, cx1, cy1 = state.clip[1]
+            clip_bbox = self._text_bbox(state, "".join(texts),
+                                        resources)
+            if not (clip_bbox[0] < cx1 and cx0 < clip_bbox[2]
+                    and clip_bbox[1] < cy1 and cy0 < clip_bbox[3]):
+                return "clipped", "clipped"
         # white text: the fill/stroke color per the render mode
         white, resolved = self._show_color_white(state)
         if not resolved:
@@ -636,14 +797,71 @@ class PdfExtractor:
                 cls.white_on_painted += 1
                 return None, None
             return "white_text", "white_text"
+        # same color: one non-white painted rectangle contains the
+        # text's range, no later paint overlaps it, and the text color
+        # matches the rectangle's color within the threshold
+        reason = self._same_color_reason(state, texts, resources,
+                                         paints, cls)
+        if reason is not None:
+            return reason, reason
         return None, None
+
+    def _same_color_reason(self, state, texts, resources, paints, cls):
+        """The same_color judgment: the last fill whose box contains
+        the text's range is the background candidate (the fills of
+        PAINT_FILL_OPS with a decidable, non-white color).  Any later
+        paint overlapping the text's range - a second fill, an image,
+        a shading, a pattern fill - means the background is not one
+        solid color and cancels the judgment (visible, the
+        fail-closed direction).  Shadings and pattern fills never ARE
+        the candidate (their color is not one decidable color); they
+        only cancel, which leans visible."""
+        joined = "".join(texts)
+        bbox = self._text_bbox(state, joined, resources)
+        if state.mode in (0, 4):
+            text_color = state.fill
+        elif state.mode in (1, 5):
+            text_color = state.stroke
+        else:
+            text_color = state.fill
+        candidate = None
+        candidate_index = -1
+        for index, entry in enumerate(paints):
+            if entry[3] != "fill":
+                continue
+            if _color_near_white(entry[1]) is not False:
+                continue
+            box = entry[0]
+            if (box[0] <= bbox[0] and box[1] <= bbox[1]
+                    and bbox[2] <= box[2] and bbox[3] <= box[3]):
+                candidate = entry
+                candidate_index = index
+        if candidate is None:
+            return None
+        for entry in paints[candidate_index + 1:]:
+            box = entry[0]
+            if box is None:
+                return None
+            if (box[0] < bbox[2] and bbox[0] < box[2]
+                    and box[1] < bbox[3] and bbox[1] < box[3]):
+                return None
+        delta = _color_delta(text_color[0], text_color[1],
+                             candidate[1][0], candidate[1][1])
+        if delta is None:
+            cls.color_unresolved += 1
+            return None
+        if delta <= SAME_COLOR_MAX_DELTA:
+            return "same_color"
+        return None
 
     def _clean_label_text(self, text):
         """The name text of a PDF-authored label part: printable
         characters only (control and format characters are removed,
         every whitespace run collapses to one space), capped at
         LAYER_LABEL_MAX_CHARS with an ellipsis marker.  The PDF's own
-        name text is never emitted raw (LN2-T18)."""
+        name text is never emitted raw (LN2-T18); every PDF-authored
+        label part - layer names, form names and the metadata keys -
+        rides this one entry point (LN3-T02, LN3-T03)."""
         spaced = "".join(
             " " if ch.isspace() else ch
             for ch in text if ch.isspace() or ch.isprintable())
@@ -668,6 +886,14 @@ class PdfExtractor:
             if cleaned:
                 return "off_layer '%s'" % cleaned
         return "off_layer"
+
+    def _form_location(self, page_num: int, form_name: str,
+                       label: str) -> str:
+        """The form location: the cleaned form name between quotes, or
+        the bare word when the name cleans to nothing."""
+        if form_name:
+            return f"page {page_num} (form '{form_name}', {label})"
+        return f"page {page_num} (form, {label})"
 
     def _show_color_white(self, state):
         """(white, resolved) for the show's color under its render
@@ -720,12 +946,51 @@ class PdfExtractor:
                 total += WIDTH_FALLBACK_FACTOR * size
         return total
 
+    def _font_ascent(self, state, resources):
+        """The font's /Ascent as a fraction of the font size (per mille
+        of the /FontDescriptor, taken from the descendant font of a
+        Type0), or None when unavailable - the width fallback and the
+        height keep their previous values then."""
+        if not state.font_name or resources is None:
+            return None
+        try:
+            fonts = resources.get("/Font")
+            fonts = fonts.get_object() if fonts is not None else None
+            font = fonts.get(state.font_name, None) if fonts else None
+            font = font.get_object() if font is not None else None
+            if font is not None and str(font.get("/Subtype")) == "/Type0":
+                descendants = font.get("/DescendantFonts")
+                if descendants is not None:
+                    first = list(descendants.get_object())[0].get_object()
+                    font = first
+            descriptor = font.get("/FontDescriptor") if font is not None \
+                else None
+            if descriptor is not None:
+                ascent = descriptor.get_object().get("/Ascent")
+                if ascent is not None:
+                    value = float(ascent)
+                    if value > 0:
+                        return value / 1000.0
+        except Exception:
+            return None
+        return None
+
     def _text_bbox(self, state, text, resources):
         """The text's bounding box in the page space: the corners of
         (0, 0), (w, 0), (0, h), (w, h) in the text space through
-        (text matrix x CTM); height = the font size."""
+        (text matrix x CTM); height = the font size, tightened to the
+        font's own /Ascent when the descriptor carries one (the glyph
+        extent above the baseline; fonts without a descriptor keep the
+        full size) and clamped to the band ASCENT_HEIGHT_MIN to
+        ASCENT_HEIGHT_MAX of the size (the descriptor value is
+        PDF-authored, so it does not move the box beyond the band)."""
         w = self._estimated_width(state, text, resources)
-        h = state.size if state.size is not None else 0.0
+        size = state.size if state.size is not None else 0.0
+        ascent = self._font_ascent(state, resources)
+        h = size * ascent if (size and ascent) else size
+        if size > 0:
+            h = min(max(h, size * ASCENT_HEIGHT_MIN),
+                    size * ASCENT_HEIGHT_MAX)
         full = _mat_mul(state.ctm, state.tm)
         corners = [_mat_apply(full, 0.0, 0.0), _mat_apply(full, w, 0.0),
                    _mat_apply(full, 0.0, h), _mat_apply(full, w, h)]
@@ -735,10 +1000,24 @@ class PdfExtractor:
 
     @staticmethod
     def _inside_any_paint(bbox, paints):
-        """The text's bounding box is fully inside ONE paint box."""
-        for paint in paints:
-            if (paint[0] <= bbox[0] and paint[1] <= bbox[1]
-                    and bbox[2] <= paint[2] and bbox[3] <= paint[3]):
+        """The slide-style guard (the 0.23 semantics): the text's
+        bounding box is fully inside ONE painted box - a decidable
+        non-white path fill or an image.  Shadings and pattern fills
+        are not white-text backgrounds in this release (admitting one
+        is a measured, evidenced change); white and undecidable fills
+        never were."""
+        for entry in paints:
+            kind = entry[3]
+            if kind == "image":
+                pass
+            elif kind == "fill":
+                if _color_near_white(entry[1]) is not False:
+                    continue
+            else:
+                continue
+            box = entry[0]
+            if (box[0] <= bbox[0] and box[1] <= bbox[1]
+                    and bbox[2] <= box[2] and bbox[3] <= box[3]):
                 return True
         return False
 
@@ -768,17 +1047,129 @@ class PdfExtractor:
         except Exception:
             pass
 
+    def _apply_extgstate(self, state, operands, resources):
+        """The gs operator: the named /ExtGState entry carries the fill
+        and stroke opacities (/ca, /CA) and the soft-mask and blend
+        mode annotations.  Only the entries the dictionary names change
+        the state (PDF 32000-1 7.2.2); a missing name or an unreadable
+        dictionary or operand fails closed."""
+        if not operands:
+            raise _StateError("gs operand is missing")
+        name = str(operands[0])
+        entry = None
+        if resources is not None:
+            try:
+                gs_res = resources.get("/ExtGState")
+                gs_res = (gs_res.get_object()
+                          if gs_res is not None else None)
+                if gs_res:
+                    ref = gs_res.get(name, None)
+                    entry = (ref.get_object()
+                             if ref is not None else None)
+            except Exception:
+                entry = None
+        if entry is None:
+            raise _StateError("ExtGState reference cannot be resolved")
+        try:
+            ca = entry.get("/ca")
+            if ca is not None:
+                state.alpha_fill = float(ca)
+            cA = entry.get("/CA")
+            if cA is not None:
+                state.alpha_stroke = float(cA)
+            smask = entry.get("/SMask")
+            if smask is not None:
+                state.smask = str(smask) != "/None"
+            bm = entry.get("/BM")
+            if bm is not None:
+                state.bm = str(bm) not in _BM_TRANSPARENT_MODES
+        except _StateError:
+            raise
+        except Exception:
+            raise _StateError("ExtGState is not readable")
+
+    def _apply_clip_state(self, state, points):
+        """W / W* followed by n: the path becomes the clip.  The shape
+        judgment runs once, on the CTM-transformed points; several
+        clips intersect; a shape the judgment cannot read leaves the
+        region unresolved (visible, counted)."""
+        shape = _axis_aligned_rect(points)
+        if shape is None:
+            shape = "unresolved"
+        state.clip = _clip_intersect(state.clip, shape)
+
+    def _record_shading(self, state, paints):
+        """A sh operator paints its shading inside the current clip.
+        The paint joins the history as a color-unknown background: its
+        extent is the clip rectangle when the clip is judgeable, else
+        unknown (an unknown extent cancels a same_color judgment -
+        the visible-leaning direction).  A shading never becomes the
+        white-text background in this release; admitting one is a
+        measured, evidenced change (the clip rectangle plus both
+        /Extend flags true)."""
+        if state.clip == "empty":
+            return
+        if isinstance(state.clip, tuple) and state.clip[0] == "rect":
+            paints.append((state.clip[1], None, None, "sh"))
+        else:
+            paints.append((None, None, None, "sh"))
+
+    def _form_bbox_shape(self, form, state):
+        """The form's /BBox as a clip shape in the page space under
+        the invocation CTM (x the form /Matrix when present).  A
+        missing /BBox leaves the clip unchanged; a malformed box or
+        matrix fails closed."""
+        try:
+            bbox = form.get("/BBox")
+        except Exception:
+            bbox = None
+        if bbox is None:
+            return None
+        try:
+            values = _floats(list(bbox.get_object()))
+            if len(values) != 4:
+                raise _StateError("form /BBox is malformed")
+        except _StateError:
+            raise
+        except Exception:
+            raise _StateError("form /BBox is not readable")
+        ctm = state.ctm
+        try:
+            matrix_ref = form.get("/Matrix")
+        except Exception:
+            matrix_ref = None
+        if matrix_ref is not None:
+            try:
+                matrix = _matrix_operand(list(matrix_ref.get_object()))
+            except Exception:
+                matrix = None
+            if matrix is None:
+                raise _StateError("form /Matrix is malformed")
+            ctm = _mat_mul(matrix, state.ctm)
+        x0, y0, w, h = values
+        corners = [_mat_apply(ctm, x0, y0), _mat_apply(ctm, x0 + w, y0),
+                   _mat_apply(ctm, x0, y0 + h),
+                   _mat_apply(ctm, x0 + w, y0 + h)]
+        xs = [c[0] for c in corners]
+        ys = [c[1] for c in corners]
+        nx0, nx1 = min(xs), max(xs)
+        ny0, ny1 = min(ys), max(ys)
+        if nx0 >= nx1 or ny0 >= ny1:
+            return "empty"
+        return ("rect", (nx0, ny0, nx1, ny1))
+
     def _end_path(self, operator, state, path_points, paints):
-        """A path-painting operator ends the path.  Only the fills of
-        PAINT_FILL_OPS (f / F / f* / B / b - the design request's
-        literal list) with a non-near-white, decidable fill become a
-        background; everything else is discarded."""
+        """A path-painting operator ends the path.  Every fill of
+        PAINT_FILL_OPS (f / F / f* / B / B* / b / b*) joins the paint
+        history with its fill color; the slide-style guard counts a
+        history entry only when it is a decidable non-white fill or an
+        image (the 0.23 semantics), and the same_color judgment only
+        accepts a decidable non-white fill as the candidate."""
         if operator in PAINT_FILL_OPS and path_points:
-            near = _color_near_white(state.fill)
-            if near is False:
-                xs = [p[0] for p in path_points]
-                ys = [p[1] for p in path_points]
-                paints.append((min(xs), min(ys), max(xs), max(ys)))
+            xs = [p[0] for p in path_points]
+            ys = [p[1] for p in path_points]
+            box = (min(xs), min(ys), max(xs), max(ys))
+            paints.append((box, state.fill, state.fill_space, "fill"))
         path_points.clear()
 
     def _walk_stream(self, stream, state: "_TrState", resources, cls,
@@ -794,13 +1185,29 @@ class PdfExtractor:
         _StateError when the drawing state cannot be tracked.
         """
         path_points: List[Tuple[float, float]] = []
+        pending_clip = None
         for op_index, (operands, operator) in enumerate(stream.operations):
+            if pending_clip is not None:
+                # W / W* must be followed by n for the clip to take
+                # effect; any other operator discards the pending path
+                if operator == b"n":
+                    self._apply_clip_state(state, pending_clip)
+                pending_clip = None
+            if operator == b"gs":
+                self._apply_extgstate(state, operands, resources)
+                continue
             if operator in _STATE_OPS:
                 state.apply(operator, operands)
                 continue
             if operator in (b"BDC", b"BMC", b"EMC"):
                 self._apply_marking(operator, operands, resources,
                                     state, cls.oc_cfg)
+                continue
+            if operator in (b"W", b"W*"):
+                pending_clip = list(path_points)
+                continue
+            if operator == b"sh":
+                self._record_shading(state, paints)
                 continue
             if operator in _PATH_OPS:
                 self._record_path_point(operator, operands, state,
@@ -842,10 +1249,18 @@ class PdfExtractor:
                                _mat_apply(state.ctm, 1.0, 1.0)]
                     xs = [c[0] for c in corners]
                     ys = [c[1] for c in corners]
-                    paints.append((min(xs), min(ys), max(xs), max(ys)))
+                    paints.append(((min(xs), min(ys), max(xs), max(ys)),
+                                   None, None, "image"))
                     continue
                 if subtype != "/Form":
                     continue
+                # the form's /BBox narrows the clip for the walk (and
+                # for the declaration walk's seed, which restores the
+                # same state); a malformed box fails closed
+                bbox_shape = self._form_bbox_shape(form, state)
+                if bbox_shape is not None:
+                    state.clip = _clip_intersect(state.clip,
+                                                 bbox_shape)
                 existing = cls.records_by_obj.get(id(form))
                 if existing is not None:
                     # already walked (cycle or alias): reuse the record,
@@ -903,7 +1318,10 @@ class PdfExtractor:
                     # WITH the form's own /OC in the governing context
                     seed = saved
                     if form_oc is not None:
-                        seed = seed[:-1] + ((seed[-1] + (form_oc,)),)
+                        seed = list(saved)
+                        seed[_TrState._OC_SNAPSHOT_INDEX] = \
+                            seed[_TrState._OC_SNAPSHOT_INDEX] + (form_oc,)
+                        seed = tuple(seed)
                     cls.drawn_states[id(form)] = (seed,
                                                   record.paints_at_entry)
                     if len(record.paints_at_entry) > len(paints):
@@ -1038,18 +1456,33 @@ class PdfExtractor:
     # ------------------------------------------------------------------
 
     def _group_hidden(self, pieces):
-        """[(label, joined text)] for the hidden pieces of one source,
-        grouped per label in the order the labels first occur."""
+        """[(label, reason, joined text)] for the hidden pieces of one
+        source, grouped per label in the order the labels first occur.
+        One label maps to one reason (the label is the location side
+        of the same judgment), so the structured kind word rides the
+        group."""
         order: List[str] = []
         groups: Dict[str, List[str]] = {}
+        reasons: Dict[str, str] = {}
         for pc in pieces:
             if pc.reason is None:
                 continue
             if pc.label not in groups:
                 groups[pc.label] = []
                 order.append(pc.label)
+                reasons[pc.label] = pc.reason
             groups[pc.label].append(pc.text)
-        return [(label, "".join(groups[label])) for label in order]
+        return [(label, reasons[label], "".join(groups[label]))
+                for label in order]
+
+    @staticmethod
+    def _set_kind_fields(seg, reason, page_num):
+        """Attach the structured kind fields to a hidden PDF segment.
+        The fields exist only when a value exists: a segment without a
+        kind word never gains the attributes, so no serialization of
+        an existing sample or a non-PDF lane changes shape."""
+        seg.how = _HOW_OF_REASON.get(reason, reason)
+        seg.page = page_num
 
     def _extract_page_text(self, page, page_num: int, reader,
                            counters=None) -> List[Segment]:
@@ -1100,24 +1533,28 @@ class PdfExtractor:
                 kind="body",
                 location=f"page {page_num} (raw stream)",
             ))
-        for label, joined in self._group_hidden(cls.page_pieces):
-            segments.append(Segment(
+        for label, reason, joined in self._group_hidden(cls.page_pieces):
+            seg = Segment(
                 text=joined,
                 visible=False,
                 kind="css_hidden",
                 location=f"page {page_num} ({label})",
-            ))
+            )
+            self._set_kind_fields(seg, reason, page_num)
+            segments.append(seg)
 
         for form_name, form_raw, hidden_groups in self._scan_form_streams(
                 page, reader, cls):
-            for label, joined in hidden_groups:
-                segments.append(Segment(
+            for label, reason, joined in hidden_groups:
+                seg = Segment(
                     text=joined,
                     visible=False,
                     kind="css_hidden",
-                    location=(f"page {page_num} (form '{form_name}', "
-                              f"{label})"),
-                ))
+                    location=self._form_location(page_num, form_name,
+                                                 label),
+                )
+                self._set_kind_fields(seg, reason, page_num)
+                segments.append(seg)
             if (form_raw and self._contains_invisible(form_raw)
                     and not self._contains_invisible(text)):
                 segments.append(Segment(
@@ -1131,6 +1568,8 @@ class PdfExtractor:
         if counters is not None:
             counters["color_unresolved"] += cls.color_unresolved
             counters["white_on_painted"] += cls.white_on_painted
+            counters["alpha_unresolved"] += cls.alpha_unresolved
+            counters["clip_unresolved"] += cls.clip_unresolved
         return segments
 
     def _withheld_segments(self, page_num: int,
@@ -1145,13 +1584,15 @@ class PdfExtractor:
             kind="body",
             location=f"page {page_num} ({self._WITHHELD_REASON})",
         )]
-        for label, joined in self._group_hidden(cls.page_pieces):
-            segments.append(Segment(
+        for label, reason, joined in self._group_hidden(cls.page_pieces):
+            seg = Segment(
                 text=joined,
                 visible=False,
                 kind="css_hidden",
                 location=f"page {page_num} ({label})",
-            ))
+            )
+            self._set_kind_fields(seg, reason, page_num)
+            segments.append(seg)
         return segments
 
     # ------------------------------------------------------------------
@@ -1179,15 +1620,32 @@ class PdfExtractor:
         raw_parts: List[str] = []
         groups: Dict[str, List[str]] = {}
         order: List[str] = []
+        group_reasons: Dict[str, str] = {}
         path_points: List[Tuple[float, float]] = []
+        pending_clip = None
         for operands, operator in stream.operations:
             try:
+                if pending_clip is not None:
+                    # W / W* must be followed by n for the clip to
+                    # take effect; any other operator discards it
+                    if operator == b"n":
+                        self._apply_clip_state(state, pending_clip)
+                    pending_clip = None
+                if operator == b"gs":
+                    self._apply_extgstate(state, operands, resources)
+                    continue
                 if operator in _STATE_OPS:
                     state.apply(operator, operands)
                     continue
                 if operator in (b"BDC", b"BMC", b"EMC"):
                     self._apply_marking(operator, operands, resources,
                                         state, cls.oc_cfg)
+                    continue
+                if operator in (b"W", b"W*"):
+                    pending_clip = list(path_points)
+                    continue
+                if operator == b"sh":
+                    self._record_shading(state, paints)
                     continue
                 if operator in _PATH_OPS:
                     self._record_path_point(operator, operands, state,
@@ -1206,6 +1664,7 @@ class PdfExtractor:
                         if label not in groups:
                             groups[label] = []
                             order.append(label)
+                            group_reasons[label] = reason
                         groups[label].extend(texts)
                 # Do inside a form's stream is not descended here: the
                 # declaration walk covers the declared children with
@@ -1215,7 +1674,8 @@ class PdfExtractor:
             except Exception:
                 continue
         return ("".join(raw_parts),
-                [(label, "".join(groups[label])) for label in order])
+                [(label, group_reasons[label], "".join(groups[label]))
+                 for label in order])
 
     def _scan_form_streams(self, page, reader, cls):
         """Walk Form XObjects declared in the page's /Resources.
@@ -1300,7 +1760,8 @@ class PdfExtractor:
                         paints, cls)
                 except Exception:
                     continue
-                results.append((str(key), raw, hidden_groups))
+                results.append((self._clean_label_text(str(key)), raw,
+                                hidden_groups))
                 try:
                     fres = obj.get("/Resources")
                     fres = fres.get_object() if fres is not None else None
@@ -1385,29 +1846,41 @@ class PdfExtractor:
 
 
 class _TrState:
-    """The drawing state the five hidden kinds need (PDF 32000-1
-    sections 4 through 9).
+    """The drawing state the hidden kinds need (PDF 32000-1 sections
+    4 through 9).
 
     One instance classifies a whole page walk; the observation and the
     visible text are both derived from it (one judgment, two outputs).
     Tracked state: the text render mode (Tr), the CTM (cm, composed as
     cm x CTM), the font size and font name (Tf), the text matrix
     (Tm/Td/TD/T*/TL; BT resets it to the identity), the fill and stroke
-    colors and color spaces (g/G/rg/RG/k/K/cs/CS/sc/SC/scn/SCN), and
-    the marked-content stack (BDC/BMC/EMC, managed by the walk).  q/Q
-    save and restore everything except the text matrix (BT resets it
-    before the next show) and the marked-content stack (which is
-    lexical in the stream, not graphics state).  Tz (horizontal
-    scaling) is deliberately NOT applied to Td offsets: pypdf 4.0.0 and
-    6.6.0 both measure Td offsets unscaled (the visible side is pypdf's
-    own machinery, so the origin formula follows its measured behavior).
+    colors and color spaces (g/G/rg/RG/k/K/cs/CS/sc/SC/scn/SCN), the
+    fill and stroke opacities with their soft-mask and blend-mode
+    annotations (gs; an unresolvable or unreadable /ExtGState fails
+    closed), the clip region (W / W* before n, intersected; the shape
+    is judged on the CTM-transformed points), and the marked-content
+    stack (BDC/BMC/EMC, managed by the walk).  q/Q save and restore
+    everything except the text matrix (BT resets it before the next
+    show) and the marked-content stack (which is lexical in the
+    stream, not graphics state).  Tz (horizontal scaling) is
+    deliberately NOT applied to Td offsets: pypdf 4.0.0 and 6.6.0 both
+    measure Td offsets unscaled (the visible side is pypdf's own
+    machinery, so the origin formula follows its measured behavior).
     A Form XObject invoked by Do inherits the state at its invocation
     (the caller saves and restores around the form).
+
+    The clip state is None (unclipped), ("rect", box), "empty" (every
+    show is hidden) or "unresolved" (the shape judgment failed; the
+    shows stay visible and are counted).  A paint-history entry is
+    (box, color, color space, kind): box is the painted rectangle in
+    the page space (None when the extent is unknown), color is the
+    resolved fill color or None, kind is "fill", "image" or "sh".
     """
 
     __slots__ = ("mode", "ctm", "tm", "size", "font_name", "fill",
                  "stroke", "fill_space", "stroke_space", "tl", "oc",
-                 "stack")
+                 "stack", "alpha_fill", "alpha_stroke", "smask", "bm",
+                 "clip")
 
     def __init__(self, mode: int = 0):
         self.mode = mode
@@ -1422,32 +1895,45 @@ class _TrState:
         self.tl = 0.0
         self.oc: Tuple = ()
         self.stack: List[Tuple] = []
+        self.alpha_fill = 1.0
+        self.alpha_stroke = 1.0
+        self.smask = False
+        self.bm = False
+        self.clip = None
+
+    # The oc slot's position in snapshot() (the declaration walk's
+    # seed extends the governing context with the form's own /OC).
+    _OC_SNAPSHOT_INDEX = 10
 
     # -- snapshots -------------------------------------------------------
 
     def snapshot(self):
         """Everything that shapes a form's classification, including
-        the marked-content context (re-invocation compare and the
-        declaration walk's seed)."""
+        the marked-content context, the opacities and the clip
+        (re-invocation compare and the declaration walk's seed)."""
         return (self.mode, self.ctm, self.tm, self.size, self.font_name,
                 self.fill, self.stroke, self.fill_space,
-                self.stroke_space, self.tl, self.oc)
+                self.stroke_space, self.tl, self.oc, self.alpha_fill,
+                self.alpha_stroke, self.smask, self.bm, self.clip)
 
     def restore(self, snap):
         (self.mode, self.ctm, self.tm, self.size, self.font_name,
          self.fill, self.stroke, self.fill_space, self.stroke_space,
-         self.tl, oc) = snap
+         self.tl, oc, self.alpha_fill, self.alpha_stroke, self.smask,
+         self.bm, self.clip) = snap
         self.oc = oc
 
     def _gfx_snapshot(self):
         return (self.mode, self.ctm, self.size, self.font_name,
                 self.fill, self.stroke, self.fill_space,
-                self.stroke_space, self.tl)
+                self.stroke_space, self.tl, self.alpha_fill,
+                self.alpha_stroke, self.smask, self.bm, self.clip)
 
     def _gfx_restore(self, snap):
         (self.mode, self.ctm, self.size, self.font_name, self.fill,
          self.stroke, self.fill_space, self.stroke_space,
-         self.tl) = snap
+         self.tl, self.alpha_fill, self.alpha_stroke, self.smask,
+         self.bm, self.clip) = snap
 
     # -- operator application --------------------------------------------
 
@@ -1615,7 +2101,8 @@ class _PageClassification:
                  "forms", "records_by_obj", "top_sites", "failed",
                  "page_stream", "page_contents", "drawn_states",
                  "page_paints", "box", "oc_cfg", "color_unresolved",
-                 "white_on_painted")
+                 "white_on_painted", "alpha_unresolved",
+                 "clip_unresolved")
 
     def __init__(self):
         self.page_pieces: List[_Piece] = []
@@ -1633,6 +2120,8 @@ class _PageClassification:
         self.oc_cfg = None
         self.color_unresolved = 0
         self.white_on_painted = 0
+        self.alpha_unresolved = 0
+        self.clip_unresolved = 0
 
     def page_show_indexes_add(self, parent_record, op_index: int) -> None:
         if parent_record is not None:

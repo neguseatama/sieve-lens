@@ -38,7 +38,7 @@ v
 | H1 | Parseability | Format-specific extraction succeeds |
 | H2 | Zero-Width Density | Symbolic density over body text |
 | H3 | Bidi Controls | Presence of directional control chars |
-| H4 | Format Concealment | Inline CSS hiding rules; DOCX concealment (vanish / low-contrast / tiny font / tracked deletions); PDF hidden text (render modes 3/7, tiny font, off-page, off layer, white text) |
+| H4 | Format Concealment | Inline CSS hiding rules; DOCX concealment (vanish / low-contrast / tiny font / tracked deletions); PDF hidden text (render modes 3/7, tiny font, off-page, off layer, invisible ink, clipped away, text on its own color, white text) |
 | H5 | Out-of-Band Channel | Comments, metadata, hidden attrs |
 | H6 | Script Mixing | Homoglyph signature within tokens |
 | H7 | Contiguous Payload | Long runs of invisible characters |
@@ -137,7 +137,7 @@ document positions text, not what it says. Their scope:
 
 ---
 
-## PDF Hidden Text (v0.23.0)
+## PDF Hidden Text (v0.24.0)
 
 The visible page text and the hidden-text report are built from ONE
 shared classification of the drawing state: the text render mode
@@ -145,7 +145,13 @@ shared classification of the drawing state: the text render mode
 inherited by a Form XObject invoked by `Do`), the CTM (`cm`), the font
 size (`Tf`), the text matrix (`Tm`/`Td`/`TD`/`T*`/`TL`; `BT` resets
 it), the fill and stroke colors (`g`/`G`/`rg`/`RG`/`k`/`K`/`cs`/`CS`/
-`sc`/`scn`/`SC`/`SCN`) and the marked-content stack (`BDC`/`BMC`/`EMC`).
+`sc`/`scn`/`SC`/`SCN`), the fill and stroke opacities with their
+soft-mask and blend-mode annotations (`gs`, resolved through
+`/ExtGState`; `q`/`Q` save and restore them; a Form XObject inherits
+them at its invocation), the clip region (`W` / `W*` before `n`,
+intersected, judged on the CTM-transformed points; a Form XObject's
+`/BBox` narrows the clip at its invocation) and the marked-content
+stack (`BDC`/`BMC`/`EMC`).
 
 The hidden kinds ride inside H4 with these labels:
 
@@ -155,43 +161,84 @@ The hidden kinds ride inside H4 with these labels:
 | `tiny_font` | tiny text | the effective font size - the `Tf` size x the scale of the text matrix x the scale of the CTM - is below **2.0 pt**. (The DOCX lane uses the same closed word for its own sense: `w:sz` <= 2 half-points.) |
 | `off_page` | off-page | the drawing origin (the text-matrix translation carried through the CTM) lies outside the page's view box (`/CropBox` when present, else `/MediaBox`). An origin inside the box keeps the text visible even when glyphs extend past the edge. `/Rotate` does not affect the judgment. |
 | `off_layer '<name>'` | hidden layer | text governed by an optional-content group or membership dictionary that is OFF in the default configuration (`/OCProperties /D`), through `BDC /OC ... EMC` (resolved via `/Properties`) or a Form XObject's `/OC`. OCMD policies (`AnyOn` / `AllOn` / `AnyOff` / `AllOff`) are applied to `/OCGs`. The `<name>` in the label is never the PDF's own name text raw: it is cleaned first (printable characters only - control and format characters removed, whitespace runs collapsed to one space) and capped at 40 characters (`...` marks a capped name; `LAYER_LABEL_MAX_CHARS`). The same cleaning applies to the BDC property key, and a name that cleans to nothing falls back to the key. |
+| `transparent` | invisible ink | the opacity the render mode draws with (`/ca` for 0/4, `/CA` for 1/5, both for 2/6) is at or below **0.02** (`ALPHA_MAX_HIDDEN`). The threshold judgment comes first: at or below it the text draws nothing whatever a soft mask or a blend mode would compose on top, so it is hidden even then. |
+| `clipped` | clipped away | the text's estimated box and the current clip rectangle never intersect. Several clips intersect; an empty clip hides everything; the shape judgment runs once, on the CTM-transformed path points (a clip drawn under a 90-degree rotation stays a rectangle, so it is judged). |
+| `same_color` | text on its own color | one non-white painted rectangle (a fill of `f` / `F` / `f*` / `B` / `B*` / `b` / `b*`) contains the text's whole estimated box, no later paint overlaps the box, and the drawing color's per-component difference from the rectangle's color stays within **0.02** (`SAME_COLOR_MAX_DELTA`). Gray and RGB compare in the (g, g, g) conversion; CMYK compares against CMYK only. |
 | `white_text` | white text | the color the render mode draws with (0/4 fill, 1/5 stroke, 2/6 both) is near white - DeviceGray >= **0.98**, DeviceRGB all >= **0.98**, DeviceCMYK all <= **0.02** - and no non-white paint sits beneath it. |
+
+Every hidden PDF segment also carries the structured kind word (the
+closed nine-word vocabulary `PDF_HIDDEN_HOWS`: `tr3`, `tr7`,
+`tiny_font`, `off_page`, `off_layer`, `white_text`, `transparent`,
+`clipped`, `same_color`) and the 1-based page number as attributes
+that exist only when a value exists - no serialization of an existing
+sample, of the HTML and DOCX lanes, or of a visible segment gains a
+key. The location wording above is unchanged and stays the display
+side of the same judgment.
 
 What a reader may find unexpected:
 
 - **White text on a painted background stays visible.** When one
   non-near-white paint drawn BEFORE the text - a filled path
-  (`f` / `F` / `f*` / `B` / `b`) or an image `Do` - fully contains the
-  text's estimated box (width from the font's `/Widths`, else 1.0 x
-  the font size per character; height = the font size), the text is
-  treated as the slide-style "white banner on a colored rectangle"
-  and stays visible; the count lands in the diagnostics as
-  `white_on_painted`.
+  (`f` / `F` / `f*` / `B` / `B*` / `b` / `b*`) or an image `Do` -
+  fully contains the text's estimated box (width from the font's
+  `/Widths`, else 1.0 x the font size per character; height from the
+  font's own `/Ascent` when the descriptor carries one - clamped to
+  the 0.5 to 1.0 band of the font size, because the descriptor value
+  is PDF-authored - else the full
+  font size), the text is treated as the slide-style "white banner on
+  a colored rectangle" and stays visible; the count lands in the
+  diagnostics as `white_on_painted`. A shading (`sh`) and a pattern
+  fill do not enter this background guard in this release; admitting
+  one stays open for a measured, evidenced change.
+- **White text that runs wider than its shape is reported hidden.**
+  The estimate of the text box is compared against the whole paint;
+  when the text genuinely overruns its colored rectangle (as slide
+  exports do for overflowing labels), the part outside the shape
+  paints white on white, and the whole show operation is counted as
+  `white_text` - the hidden-leaning direction for the visible part
+  that the paint does cover.
 - **Colors Lens cannot decide never become hidden.** Non-device color
   spaces (`ICCBased`, `Indexed`, `Separation`, patterns) and operand
   counts that do not match the current space leave the judgment open:
   the text stays visible and the count lands in the diagnostics as
-  `color_unresolved`.
+  `color_unresolved`. The same direction applies to a same-color
+  candidate whose color family differs from the text's (Gray/RGB
+  against CMYK).
+- **An image, a shading or a pattern fill over the background cancels
+  the same-color judgment.** They are recorded as color-unknown
+  paints: they never become the background candidate, and any of them
+  overlapping the text's range after the candidate makes the text
+  visible again (the fail-safe leans visible).
 
 One show operation hit by several kinds reports the first reason in
-the fixed order above (render mode, tiny, off-page, layer, white) and
-never reaches the visible text. The hidden pieces of one page (and of
-one form) join into one `css_hidden` segment per label, in the order
-the labels first occur; the visible text keeps its 0.22.1 reading
-order. A scan PDF whose OCR layer is drawn invisibly over the page
-therefore yields an empty visible text while the observation reports
-the hidden text - the intended result, not a reading failure.
+the fixed order (render mode, tiny, off-page, layer, transparent,
+clipped, white, same color) and never reaches the visible text. The
+hidden pieces of one page (and of one form) join into one
+`css_hidden` segment per label, in the order the labels first occur;
+the visible text keeps its 0.22.1 reading order. A scan PDF whose OCR
+layer is drawn invisibly over the page therefore yields an empty
+visible text while the observation reports the hidden text - the
+intended result, not a reading failure.
 
 Fail-closed conditions (the page emits no visible text and records
 `Extraction failed` in its page location; other pages are unaffected):
 an unreadable content stream, a state-tracking failure (a malformed
-`Tr` / `Tf` / `Tm` / `cm` operand), form nesting beyond the walk limit
-(8), a form re-invoked under a different state, an unresolvable `/OC`
-reference, an unsupported `/VE`, and OCMD nesting beyond 8 levels.
-`Tz` (horizontal scaling) is deliberately not applied to `Td` offsets:
-pypdf 4.0.0 and 6.6.0 both measure `Td` offsets unscaled, and the
-visible side is pypdf's own machinery, so the origin formula follows
-that measured behavior.
+`Tr` / `Tf` / `Tm` / `cm` operand), a `gs` name the `/ExtGState`
+dictionary does not carry, an unreadable `/ExtGState` or opacity
+operand, form nesting beyond the walk limit (8), a form re-invoked
+under a different state (the opacities and the clip are part of the
+identity), a malformed form `/BBox` or `/Matrix`, an unresolvable
+`/OC` reference, an unsupported `/VE`, and OCMD nesting beyond 8
+levels. `Tz` (horizontal scaling) is deliberately not applied to `Td`
+offsets: pypdf 4.0.0 and 6.6.0 both measure `Td` offsets unscaled, and
+the visible side is pypdf's own machinery, so the origin formula
+follows that measured behavior.
+
+The label cleaning (printable characters only, whitespace runs
+collapsed, capped at 40 characters) covers every PDF-authored name the
+locations carry: the layer names, the form names and the metadata
+keys. A form name that cleans to nothing falls back to the bare form
+word. Ordinary names never change.
 
 ---
 

@@ -971,10 +971,10 @@ class TestL1T12Pins(L1Base):
                 (REPO_ROOT / rel).read_bytes()).hexdigest()
             self.assertEqual(actual, pin, msg=rel)
 
-    def test_version_is_0_23_0_everywhere(self):
-        self.assertEqual(__version__, "0.23.0")
+    def test_version_is_0_24_0_everywhere(self):
+        self.assertEqual(__version__, "0.24.0")
         text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.23.0"', text)
+        self.assertIn('version = "0.24.0"', text)
 
     def test_core_imports_are_stdlib_only(self):
         src = (REPO_ROOT / "sieve_lens.py").read_text(encoding="utf-8")

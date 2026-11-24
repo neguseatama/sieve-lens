@@ -1,0 +1,9 @@
+{
+ "sieve_lens.py": 1,
+ "sieve_lens_ext/pdf.py": 3,
+ "tests/test_sieve_lens_l1_reading.py": 3,
+ "tests/test_sieve_lens_l2_docx.py": 12,
+ "tests/test_sieve_lens_pdf_hidden_kinds.py": 5,
+ "tests/test_sieve_lens_pdf_visible.py": 4,
+ "tests/test_sieve_lens_v0_22.py": 6
+}
