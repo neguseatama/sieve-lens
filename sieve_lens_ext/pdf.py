@@ -301,7 +301,8 @@ class PdfExtractor:
                     text=val,
                     visible=False,
                     kind="metadata",
-                    location=f"PDF metadata / {key}",
+                    location=(f"PDF metadata / "
+                              f"{self._clean_label_text(key)}"),
                 ))
         return segments
 
@@ -643,7 +644,9 @@ class PdfExtractor:
         characters only (control and format characters are removed,
         every whitespace run collapses to one space), capped at
         LAYER_LABEL_MAX_CHARS with an ellipsis marker.  The PDF's own
-        name text is never emitted raw (LN2-T18)."""
+        name text is never emitted raw (LN2-T18); every PDF-authored
+        label part - layer names, form names and the metadata keys -
+        rides this one entry point (LN3-T02, LN3-T03)."""
         spaced = "".join(
             " " if ch.isspace() else ch
             for ch in text if ch.isspace() or ch.isprintable())
@@ -668,6 +671,14 @@ class PdfExtractor:
             if cleaned:
                 return "off_layer '%s'" % cleaned
         return "off_layer"
+
+    def _form_location(self, page_num: int, form_name: str,
+                       label: str) -> str:
+        """The form location: the cleaned form name between quotes, or
+        the bare word when the name cleans to nothing."""
+        if form_name:
+            return f"page {page_num} (form '{form_name}', {label})"
+        return f"page {page_num} (form, {label})"
 
     def _show_color_white(self, state):
         """(white, resolved) for the show's color under its render
@@ -1115,8 +1126,8 @@ class PdfExtractor:
                     text=joined,
                     visible=False,
                     kind="css_hidden",
-                    location=(f"page {page_num} (form '{form_name}', "
-                              f"{label})"),
+                    location=self._form_location(page_num, form_name,
+                                                 label),
                 ))
             if (form_raw and self._contains_invisible(form_raw)
                     and not self._contains_invisible(text)):
@@ -1300,7 +1311,8 @@ class PdfExtractor:
                         paints, cls)
                 except Exception:
                     continue
-                results.append((str(key), raw, hidden_groups))
+                results.append((self._clean_label_text(str(key)), raw,
+                                hidden_groups))
                 try:
                     fres = obj.get("/Resources")
                     fres = fres.get_object() if fres is not None else None
