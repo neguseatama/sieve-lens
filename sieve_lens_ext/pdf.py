@@ -905,12 +905,46 @@ class PdfExtractor:
                 total += WIDTH_FALLBACK_FACTOR * size
         return total
 
+    def _font_ascent(self, state, resources):
+        """The font's /Ascent as a fraction of the font size (per mille
+        of the /FontDescriptor, taken from the descendant font of a
+        Type0), or None when unavailable - the width fallback and the
+        height keep their previous values then."""
+        if not state.font_name or resources is None:
+            return None
+        try:
+            fonts = resources.get("/Font")
+            fonts = fonts.get_object() if fonts is not None else None
+            font = fonts.get(state.font_name, None) if fonts else None
+            font = font.get_object() if font is not None else None
+            if font is not None and str(font.get("/Subtype")) == "/Type0":
+                descendants = font.get("/DescendantFonts")
+                if descendants is not None:
+                    first = list(descendants.get_object())[0].get_object()
+                    font = first
+            descriptor = font.get("/FontDescriptor") if font is not None \
+                else None
+            if descriptor is not None:
+                ascent = descriptor.get_object().get("/Ascent")
+                if ascent is not None:
+                    value = float(ascent)
+                    if value > 0:
+                        return value / 1000.0
+        except Exception:
+            return None
+        return None
+
     def _text_bbox(self, state, text, resources):
         """The text's bounding box in the page space: the corners of
         (0, 0), (w, 0), (0, h), (w, h) in the text space through
-        (text matrix x CTM); height = the font size."""
+        (text matrix x CTM); height = the font size, tightened to the
+        font's own /Ascent when the descriptor carries one (the glyph
+        extent above the baseline; fonts without a descriptor keep the
+        full size, as 0.23 measured)."""
         w = self._estimated_width(state, text, resources)
-        h = state.size if state.size is not None else 0.0
+        size = state.size if state.size is not None else 0.0
+        ascent = self._font_ascent(state, resources)
+        h = size * ascent if (size and ascent) else size
         full = _mat_mul(state.ctm, state.tm)
         corners = [_mat_apply(full, 0.0, 0.0), _mat_apply(full, w, 0.0),
                    _mat_apply(full, 0.0, h), _mat_apply(full, w, h)]

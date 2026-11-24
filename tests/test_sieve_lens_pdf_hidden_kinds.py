@@ -2085,5 +2085,107 @@ class TestHiddenKindsLN3Full(unittest.TestCase):
         self.assertEqual(self._hidden(obs), [])
 
 
+    # --- LN3-T10 --------------------------------------------------------
+
+    _FIXTURES = _ROOT / "tests" / "fixtures"
+
+    def _observe_fixture(self, name):
+        obs = self.engine.observe(self._FIXTURES / name)
+        return obs, [s for s in obs.segments if s.kind == "css_hidden"]
+
+    def test_ln3t10_real_exports_report_no_false_detections(self):
+        """LN3-T10: the LibreOffice Impress and Writer exports keep
+        their white text visible - the shaded paragraph, the table
+        cells, the colored band, the shape label, the gradient and
+        image backgrounds, the table header row and the footer bands
+        all ride the slide-style guard (white_on_painted); the two
+        white texts that genuinely run wider than their shapes are the
+        only hidden reports, and no text that renders visible on the
+        real pages is missed the other way."""
+        obs, hidden = self._observe_fixture("doc.pdf")
+        self.assertEqual(hidden, [])
+        self.assertEqual(obs.mask, "1000-100")
+        self.assertEqual(obs.diagnostics.get("white_on_painted"), 3)
+        self.assertNotIn("alpha_unresolved", obs.diagnostics)
+        self.assertNotIn("clip_unresolved", obs.diagnostics)
+        vis = visible_text(obs).text
+        self.assertIn("shaded paragraph", vis)
+        self.assertIn("Cell white one", vis)
+        self.assertIn("Cell white two", vis)
+        self.assertIn("Document header line", vis)
+        self.assertIn("Document footer line", vis)
+        meta = [s for s in obs.segments if s.kind == "metadata"]
+        self.assertTrue(meta)
+        self.assertIn("LibreOffice", meta[0].text)
+
+        obs, hidden = self._observe_fixture("slides.pdf")
+        self.assertEqual([s.location for s in hidden],
+                         ["page 2 (white_text)", "page 5 (white_text)"])
+        self.assertEqual(obs.mask, "1001-100")
+        self.assertEqual(obs.diagnostics.get("white_on_painted"), 6)
+        self.assertNotIn("alpha_unresolved", obs.diagnostics)
+        self.assertNotIn("clip_unresolved", obs.diagnostics)
+        vis = visible_text(obs).text
+        # the dark, gradient and image background titles stay visible
+        self.assertIn("White title on the dark background", vis)
+        self.assertIn("White title on the gradient background", vis)
+        self.assertIn("White title on the image background", vis)
+        self.assertIn("White text on the colored band", vis)
+        self.assertIn("Footer band of the slide", vis)
+        # the table header row rides the slide-style guard too (the
+        # cell paint beneath it); pypdf's own extraction does not
+        # surface the table texts, so their judgment is pinned through
+        # the counter rather than the visible text
+        # the two reported white texts are the shape-overflow pair;
+        # their visible-side exclusion matches the render (the part
+        # outside the shape paints white on white)
+        self.assertNotIn("White label on the colored shape", vis)
+        self.assertNotIn("White text that runs wider than its shape "
+                         "box", vis)
+
+    def test_ln3t10_injected_hidden_kinds_are_all_reported(self):
+        """LN3-T10: the injected page (an export page set plus one
+        hand-built page, kept apart from the export-origin pages) has
+        one text of each intentional kind and every one of them is
+        reported - no misses - with the kind word and the page number
+        on each segment; the in-clip and the plain lines stay
+        visible."""
+        for name, injected_page in (("doc-injected.pdf", 2),
+                                    ("slides-injected.pdf", 7)):
+            with self.subTest(sample=name):
+                obs, hidden = self._observe_fixture(name)
+                page = [s for s in hidden
+                        if getattr(s, "page", None) == injected_page]
+                kinds = sorted(getattr(s, "how", None) for s in page)
+                self.assertEqual(
+                    kinds,
+                    ["clipped", "same_color", "tiny_font", "tr3",
+                     "transparent", "white_text"])
+                joined = "".join(s.text for s in page)
+                for fragment in ("Injected Tr3 memo.",
+                                 "Injected transparent.",
+                                 "Injected clipped out.",
+                                 "Injected same color.",
+                                 "Injected white.", "Injected tiny."):
+                    self.assertIn(fragment, joined)
+                vis = visible_text(obs).text
+                for fragment in ("Injected visible line.",
+                                 "Injected clipped in.",
+                                 "Injected end black."):
+                    self.assertIn(fragment, vis)
+                # the export-origin pages keep their own counts
+                if name == "doc-injected.pdf":
+                    export_hidden = [s for s in hidden
+                                     if getattr(s, "page", None) == 1]
+                    self.assertEqual(export_hidden, [])
+                else:
+                    export_hidden = [s for s in hidden
+                                     if getattr(s, "page", None)
+                                     in (1, 2, 3, 4, 5, 6)]
+                    self.assertEqual([s.location for s in export_hidden],
+                                     ["page 2 (white_text)",
+                                      "page 5 (white_text)"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

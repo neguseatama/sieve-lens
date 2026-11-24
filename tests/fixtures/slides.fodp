@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.presentation">
+ <office:automatic-styles>
+  <style:style style:name="TW" style:family="text">
+   <style:text-properties fo:color="#ffffff" fo:font-size="24pt"/>
+  </style:style>
+  <style:style style:name="TWs" style:family="text">
+   <style:text-properties fo:color="#ffffff" fo:font-size="14pt"/>
+  </style:style>
+  <style:style style:name="TB" style:family="text">
+   <style:text-properties fo:color="#101010" fo:font-size="14pt"/>
+  </style:style>
+  <style:style style:name="GR" style:family="graphic">
+   <style:graphic-properties draw:fill="gradient"
+    draw:fill-gradient-name="G1" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GD" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#1a3557" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GW" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#ffffff" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GB" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#8b0000" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GG" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#1f6e43" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GF" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#333333" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GP" style:family="graphic">
+   <style:graphic-properties draw:fill="solid" draw:fill-color="#4a235a" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="GN" style:family="graphic">
+   <style:graphic-properties draw:fill="none" draw:stroke="none"/>
+  </style:style>
+  <style:style style:name="TC1" style:family="table-cell">
+   <style:table-cell-properties fo:background-color="#204a87"/>
+  </style:style>
+  <style:style style:name="TC2" style:family="table-cell">
+   <style:table-cell-properties fo:background-color="#f4f4f4"/>
+  </style:style>
+ </office:automatic-styles>
+ <office:styles>
+  <draw:gradient draw:name="G1" draw:style="linear"
+   draw:start-color="#123a6d" draw:end-color="#0a1f3c" draw:angle="900"/>
+ </office:styles>
+ <office:body><office:presentation>
+
+  <draw:page draw:name="dark">
+   <draw:rect draw:style-name="GD" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm"/>
+   <draw:frame draw:style-name="GN" svg:width="24cm" svg:height="2cm" svg:x="2cm" svg:y="2cm">
+    <draw:text-box><text:p><text:span text:style-name="TW">White title on the dark background</text:span></text:p></draw:text-box>
+   </draw:frame>
+   <draw:frame draw:style-name="GN" svg:width="24cm" svg:height="1.5cm" svg:x="2cm" svg:y="13.5cm">
+    <draw:text-box><text:p><text:span text:style-name="TWs">Dark slide body line stays dark text</text:span></text:p></draw:text-box>
+   </draw:frame>
+  </draw:page>
+
+  <draw:page draw:name="band">
+   <draw:rect draw:style-name="GW" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm"/>
+   <draw:rect draw:style-name="GB" svg:width="22cm" svg:height="2.5cm" svg:x="3cm" svg:y="3cm">
+    <text:p><text:span text:style-name="TW">White text on the colored band</text:span></text:p>
+   </draw:rect>
+   <draw:rect draw:style-name="GG" svg:width="10cm" svg:height="6cm" svg:x="3cm" svg:y="7.5cm">
+    <text:p><text:span text:style-name="TW">White label on the colored shape</text:span></text:p>
+   </draw:rect>
+  </draw:page>
+
+  <draw:page draw:name="gradient">
+   <draw:rect draw:style-name="GR" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm"/>
+   <draw:frame draw:style-name="GN" svg:width="24cm" svg:height="2cm" svg:x="2cm" svg:y="3cm">
+    <draw:text-box><text:p><text:span text:style-name="TW">White title on the gradient background</text:span></text:p></draw:text-box>
+   </draw:frame>
+  </draw:page>
+
+  <draw:page draw:name="image">
+   <draw:frame draw:style-name="GN" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm">
+    <draw:image><office:binary-data>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</office:binary-data></draw:image>
+   </draw:frame>
+   <draw:frame draw:style-name="GN" svg:width="24cm" svg:height="2cm" svg:x="2cm" svg:y="3cm">
+    <draw:text-box><text:p><text:span text:style-name="TW">White title on the image background</text:span></text:p></draw:text-box>
+   </draw:frame>
+  </draw:page>
+
+  <draw:page draw:name="overflow">
+   <draw:rect draw:style-name="GW" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm"/>
+   <draw:rect draw:style-name="GP" svg:width="10cm" svg:height="2cm" svg:x="2cm" svg:y="4cm">
+    <text:p><text:span text:style-name="TW">White text that runs wider than its shape box</text:span></text:p>
+   </draw:rect>
+  </draw:page>
+
+  <draw:page draw:name="tableslide">
+   <draw:rect draw:style-name="GW" svg:width="28cm" svg:height="15.75cm" svg:x="0cm" svg:y="0cm"/>
+   <table:table table:name="T1" table:template="table">
+    <table:table-column table:number-columns-repeated="2"/>
+    <table:table-row>
+     <table:table-cell table:style-name="TC1"><text:p><text:span text:style-name="TWs">Header one</text:span></text:p></table:table-cell>
+     <table:table-cell table:style-name="TC1"><text:p><text:span text:style-name="TWs">Header two</text:span></text:p></table:table-cell>
+    </table:table-row>
+    <table:table-row>
+     <table:table-cell table:style-name="TC2"><text:p><text:span text:style-name="TB">plain cell one</text:span></text:p></table:table-cell>
+     <table:table-cell table:style-name="TC2"><text:p><text:span text:style-name="TB">plain cell two</text:span></text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+   <draw:rect draw:style-name="GF" svg:width="28cm" svg:height="1.5cm" svg:x="0cm" svg:y="14cm">
+    <text:p><text:span text:style-name="TWs">Footer band of the slide</text:span></text:p>
+   </draw:rect>
+  </draw:page>
+
+ </office:presentation></office:body>
+</office:document>
