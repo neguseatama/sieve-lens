@@ -1142,6 +1142,40 @@ def _build_ln3(path, content, *, extgstates=None, forms=None):
         writer.write(f)
 
 
+def _build_ln3_ascent(path, content, ascent):
+    """One-page PDF whose font carries a /FontDescriptor with the
+    given /Ascent (the per-mille glyph height the descriptor claims)."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    descriptor = DictionaryObject({
+        NameObject("/Type"): NameObject("/FontDescriptor"),
+        NameObject("/FontName"): NameObject("/Helvetica"),
+        NameObject("/Flags"): NumberObject(32),
+        NameObject("/FontBBox"): ArrayObject([
+            NumberObject(-211), NumberObject(-301),
+            NumberObject(716), NumberObject(1014)]),
+        NameObject("/ItalicAngle"): NumberObject(0),
+        NameObject("/Ascent"): NumberObject(ascent),
+        NameObject("/Descent"): NumberObject(-211),
+        NameObject("/CapHeight"): NumberObject(717),
+        NameObject("/StemV"): NumberObject(87)})
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+        NameObject("/FontDescriptor"): writer._add_object(descriptor)})
+    font_ref = writer._add_object(font)
+    resources = DictionaryObject({
+        NameObject("/Font"): DictionaryObject(
+            {NameObject("/F1"): font_ref})})
+    stream = DecodedStreamObject()
+    stream.set_data(content)
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    page[NameObject("/Resources")] = resources
+    with open(path, "wb") as f:
+        writer.write(f)
+
+
 _LN3_FORM_NAMES = ("/F\x01\x00m", "/F\u202eab", "/F\tr\tb",
                    "/F" + "N" * 60)
 
@@ -1462,6 +1496,45 @@ class TestHiddenKindsLN3(unittest.TestCase):
         self.assertEqual(hidden[0].location, "page 1 (tiny_font)")
         self.assertEqual(getattr(hidden[0], "how", None), "tiny_font")
         self.assertNotIn("small ghost.", visible_text(obs).text)
+
+    # --- LN3-T12 --------------------------------------------------------
+
+    def test_ln3t12_ascent_height_stays_in_the_band(self):
+        """LN3-T12: the text-box height derived from the font
+        descriptor's /Ascent stays in the band 0.5 to 1.0 of the font
+        size.  A small descriptor value cannot shrink the box of the
+        overflow line into its painted rectangle (the line stays
+        hidden), a large one cannot push the contained line out of its
+        rectangle (the line stays visible), and zero or negative
+        descriptor values keep the full-size height.  The in-band value
+        keeps the judgment unchanged."""
+        content = (
+            b"0.8 0.1 0.1 rg 40 600 360 28 re f "
+            + _text_show("White overflow.", color=_WHITE, size=20,
+                         x=60, y=620)
+            + b" 0.8 0.1 0.1 rg 40 660 360 48 re f "
+            + _text_show("White on band.", color=_WHITE, size=20,
+                         x=60, y=672)
+            + b" " + _text_show("Black body line.", color=_BLACK,
+                                size=20, x=60, y=580))
+        for name, ascent in (("one", 1), ("large", 2000), ("zero", 0),
+                             ("negative", -200), ("in band", 1000)):
+            with self.subTest(sample=name):
+                p = self._path("ascent_" + name)
+                _build_ln3_ascent(p, content, ascent)
+                obs = self.engine.observe(p)
+                vis = visible_text(obs).text
+                hidden = self._hidden(obs)
+                self.assertEqual([s.text for s in hidden],
+                                 ["White overflow."])
+                self.assertEqual([s.location for s in hidden],
+                                 ["page 1 (white_text)"])
+                self.assertNotIn("White overflow.", vis)
+                self.assertIn("White on band.", vis)
+                self.assertIn("Black body line.", vis)
+                self.assertEqual(obs.mask, "1001-000")
+                self.assertEqual(obs.diagnostics.get("white_on_painted"),
+                                 1)
 
 
 _RED = b"0.8 0.1 0.1 rg "
