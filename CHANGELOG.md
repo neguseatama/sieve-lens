@@ -24,7 +24,9 @@
   (printable characters only, whitespace runs collapsed, capped at 40
   characters); ordinary names are unchanged.
 - The text bounding box height uses the font's own `/Ascent` when the
-  descriptor carries one; fonts without one keep the previous height.
+  descriptor carries one, clamped to the 0.5 to 1.0 band of the font
+  size (a descriptor value outside the band does not move the box);
+  fonts without one keep the previous height.
 
 ## [0.23.0] - 2026-11-20
 

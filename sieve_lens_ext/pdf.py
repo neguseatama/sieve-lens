@@ -223,6 +223,15 @@ _HOW_OF_REASON = {"mode3": "tr3", "mode7": "tr7"}
 ALPHA_MAX_HIDDEN = 0.02
 SAME_COLOR_MAX_DELTA = 0.02
 
+# The text-box height derived from the font descriptor's /Ascent is
+# clamped to this band of the font size.  The descriptor value is
+# PDF-authored, so a small one cannot shrink the box into a painted
+# background and a large one cannot push the box out of it; fonts
+# without a descriptor keep the full size.  Documented in
+# docs/ARCHITECTURE.md.
+ASCENT_HEIGHT_MIN = 0.5
+ASCENT_HEIGHT_MAX = 1.0
+
 # The blend modes that compose the text unchanged; every other /BM
 # leaves the drawing result undecidable (the soft-mask and blend-mode
 # deferral only fires ABOVE the alpha threshold).
@@ -972,11 +981,16 @@ class PdfExtractor:
         (text matrix x CTM); height = the font size, tightened to the
         font's own /Ascent when the descriptor carries one (the glyph
         extent above the baseline; fonts without a descriptor keep the
-        full size, as 0.23 measured)."""
+        full size) and clamped to the band ASCENT_HEIGHT_MIN to
+        ASCENT_HEIGHT_MAX of the size (the descriptor value is
+        PDF-authored, so it does not move the box beyond the band)."""
         w = self._estimated_width(state, text, resources)
         size = state.size if state.size is not None else 0.0
         ascent = self._font_ascent(state, resources)
         h = size * ascent if (size and ascent) else size
+        if size > 0:
+            h = min(max(h, size * ASCENT_HEIGHT_MIN),
+                    size * ASCENT_HEIGHT_MAX)
         full = _mat_mul(state.ctm, state.tm)
         corners = [_mat_apply(full, 0.0, 0.0), _mat_apply(full, w, 0.0),
                    _mat_apply(full, 0.0, h), _mat_apply(full, w, h)]

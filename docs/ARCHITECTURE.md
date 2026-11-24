@@ -182,7 +182,9 @@ What a reader may find unexpected:
   (`f` / `F` / `f*` / `B` / `B*` / `b` / `b*`) or an image `Do` -
   fully contains the text's estimated box (width from the font's
   `/Widths`, else 1.0 x the font size per character; height from the
-  font's own `/Ascent` when the descriptor carries one, else the full
+  font's own `/Ascent` when the descriptor carries one - clamped to
+  the 0.5 to 1.0 band of the font size, because the descriptor value
+  is PDF-authored - else the full
   font size), the text is treated as the slide-style "white banner on
   a colored rectangle" and stays visible; the count lands in the
   diagnostics as `white_on_painted`. A shading (`sh`) and a pattern
