@@ -1276,7 +1276,7 @@ class TestHiddenKindsLN3(unittest.TestCase):
                       locations)
         self.assertIn("page 1 (form '/Fab', invisible text, Tr 3)",
                       locations)
-        self.assertIn("page 1 (form '/F tr b', invisible text, Tr 3)",
+        self.assertIn("page 1 (form '/F r b', invisible text, Tr 3)",
                       locations)
         self.assertIn("page 1 (form '/F%s...', invisible text, Tr 3)"
                       % ("N" * 38), locations)
@@ -1311,16 +1311,20 @@ class TestHiddenKindsLN3(unittest.TestCase):
 
     def test_ln3t04_transparent_stroke_lane_and_q_q_state(self):
         """LN3-T04: stroke alpha (/CA) judges the stroke lanes (modes 1
-        and 5), and q/Q save and restore the alpha state."""
+        and 5), and q/Q save and restore the alpha state - the same
+        setting inside q/Q leaves the outer state untouched."""
         obs = self._observe(
             "stroke_alpha",
-            b"/GSa gs " + _text_show("stroke ghost.", mode=1, y=700)
-            + b" q /GSb gs Q "
-            + _text_show("restored stroke.", mode=1, y=680),
-            extgstates={"GSa": {"CA": 0.0}, "GSb": {"CA": 1.0}})
+            _text_show("plain stroke.", mode=1, y=700)
+            + b" q /GSa gs Q "
+            + _text_show("restored stroke.", mode=1, y=680) + b" "
+            + b"/GSa gs "
+            + _text_show("stroke ghost.", mode=1, y=660),
+            extgstates={"GSa": {"CA": 0.0}})
         vis = visible_text(obs).text
-        self.assertNotIn("stroke ghost.", vis)
+        self.assertIn("plain stroke.", vis)
         self.assertIn("restored stroke.", vis)
+        self.assertNotIn("stroke ghost.", vis)
         hidden = self._hidden(obs)
         self.assertEqual(len(hidden), 1)
         self.assertEqual(hidden[0].location, "page 1 (transparent)")
@@ -1441,7 +1445,8 @@ class TestHiddenKindsLN3(unittest.TestCase):
             b"0.8 0.1 0.1 rg 50 650 400 60 re f "
             + b"/GSa gs "
             + _text_show("ghost blended.", color=b"0.8 0.1 0.1 rg ",
-                         y=680))
+                         y=680),
+            extgstates={"GSa": {"ca": 0.0}})
         hidden = self._hidden(obs)
         self.assertEqual(len(hidden), 1)
         self.assertEqual(hidden[0].location, "page 1 (transparent)")
