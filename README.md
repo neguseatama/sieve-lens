@@ -1,4 +1,4 @@
-# Sieve Lens v0.23.0
+# Sieve Lens v0.24.0
 
 **Invisible Prompt Observation Engine**
 

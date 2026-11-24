@@ -970,19 +970,19 @@ class TestHiddenKindsLN2Full(unittest.TestCase):
 
     def test_ln2t15_version_pins_and_dependency_floor(self):
         import sieve_lens
-        self.assertEqual(sieve_lens.__version__, "0.23.0")
+        self.assertEqual(sieve_lens.__version__, "0.24.0")
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.23.0"', pyproject)
+        self.assertIn('version = "0.24.0"', pyproject)
         # the pypdf floor and the dependency set are unchanged
         self.assertIn('pdf = ["pypdf>=4.0"]', pyproject)
         self.assertIn("dependencies = []", pyproject)
         for name in ("README.md", "README.ja.md"):
             text = (_ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("# Sieve Lens v0.23.0", text)
+            self.assertIn("# Sieve Lens v0.24.0", text)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertTrue(changelog.startswith(
-            "# Changelog\n\n## [0.23.0]"),
-            "CHANGELOG must start with the [0.23.0] section")
+            "# Changelog\n\n## [0.24.0]"),
+            "CHANGELOG must start with the [0.24.0] section")
 
     # --- LN2-T17 --------------------------------------------------------
 

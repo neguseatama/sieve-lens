@@ -54,6 +54,38 @@ v0.23.0 - the shared state machine widens from the render mode to the
   (keys appear only when the count is greater than zero, so the 0.22.1
   samples' diagnostics stay unchanged).
 
+v0.24.0 - the drawing state widens again and the kinds follow: the
+  fill and stroke opacities with their soft-mask and blend-mode
+  annotations (gs through /ExtGState; q/Q save and restore them; a
+  form inherits them at its invocation; an unresolvable or unreadable
+  /ExtGState fails closed), the clip region (W / W* before n; the
+  shape judgment runs once, on the CTM-transformed points, so a clip
+  drawn under a 90-degree rotation stays a rectangle; several clips
+  intersect; a form's /BBox narrows the clip at its invocation), and
+  the paint history carries each fill's color.  Three kinds join the
+  five: transparent (the drawing opacity at or below 0.02 - the
+  threshold judgment comes first, so a soft mask or a non-normal blend
+  mode only defers an opacity ABOVE the threshold to visible with the
+  alpha_unresolved counter), clipped (the text's box never intersects
+  the clip rectangle; an empty clip hides everything; an undecidable
+  shape stays visible with the clip_unresolved counter), and
+  same_color (one non-white fill contains the text's box, no later
+  paint overlaps it, and the color matches within 0.02; an image, a
+  shading or a pattern fill over the background cancels the judgment -
+  the visible-leaning direction - and never becomes the background of
+  the white-text guard in this release).  The paint-op list widens by
+  the two missing fill+stroke even-odd forms B* and b*.  The text box
+  height uses the font's own /Ascent when the descriptor carries one
+  (fonts without one keep the 0.23 full-size height).
+
+  Every hidden PDF segment also carries the structured kind word (the
+  closed nine-word vocabulary PDF_HIDDEN_HOWS) and the 1-based page
+  number as attributes that exist only when a value exists, so no
+  serialization of an existing sample, of the other lanes, or of a
+  visible segment changes shape.  The location label cleaning widens
+  to the form names and the metadata keys; the fixed reason order
+  gains the two new stages between the layer and the white kinds.
+
 Note on text extraction:
   pypdf's page.extract_text() maps characters through the font's encoding
   (e.g. WinAnsi for Helvetica), which drops characters not present in that
