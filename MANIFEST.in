@@ -1,1 +1,5 @@
 include CHANGELOG.md
+include AGENTS.md
+include tools/check_public_text.py
+recursive-include tests *.py *.json
+recursive-include tests/fixtures *
