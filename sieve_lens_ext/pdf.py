@@ -1013,8 +1013,10 @@ class PdfExtractor:
         judgment runs once, on the CTM-transformed points; several
         clips intersect; a shape the judgment cannot read leaves the
         region unresolved (visible, counted)."""
-        state.clip = _clip_intersect(state.clip,
-                                     _axis_aligned_rect(points))
+        shape = _axis_aligned_rect(points)
+        if shape is None:
+            shape = "unresolved"
+        state.clip = _clip_intersect(state.clip, shape)
 
     def _record_shading(self, state, paints):
         """A sh operator paints its shading inside the current clip.
